@@ -218,16 +218,34 @@ TRUSTED_PROXIES=172.18.0.0/16
 Entries are CIDR blocks or bare addresses. With your proxy listed, the app reads
 the `X-Forwarded-For` chain from the right and stops at the first hop that is not
 one of yours — that is the client. Without it, the nearest hop it can vouch for
-is your proxy, and two things go wrong:
+is your proxy, and three things go wrong:
 
 - Login rate limiting counts every failed attempt against the proxy, so five
   mistakes lock out everyone.
 - The session cookie is issued without `Secure` even though the browser is on
   HTTPS.
+- The API believes the browser is on `http://`, so a `POST` from a page loaded
+  over `https://` looks cross-origin. Browsers that send `Sec-Fetch-Site` — every
+  current one — are waved through on that instead, but anything older gets a 403
+  on every job it tries to submit.
 
-Neither is fatal, which is why this is not required. A client that pre-loads
-`X-Forwarded-For` with forgeries cannot use them to move the answer: everything
-a proxy appends lands to the right of whatever the client sent.
+The last two are why this matters even when you do not care about the client
+address. The bundled nginx is reached over plain HTTP no matter what the browser
+is on, so `X-Forwarded-Proto` and `X-Forwarded-Host` are only ever right if they
+come from *your* proxy — which is exactly what listing it here permits. The same
+value renders an nginx `geo` block (`/etc/nginx/forwarded.conf` in a running
+container), so both hops draw the line in the same place: a trusted peer's
+`X-Forwarded-Proto`, `X-Forwarded-Host` and `X-Real-IP` are passed through, and
+anyone else's are overwritten.
+
+A client that pre-loads `X-Forwarded-For` with forgeries cannot use them to move
+the answer: everything a proxy appends lands to the right of whatever the client
+sent.
+
+Note that the address to list is the one the container sees. On a bridge network
+that is your proxy's address on that network; with the port published and the
+proxy on the host it is the Docker gateway (`172.17.0.1` by default), not the
+proxy's LAN address.
 
 ### ALLOWED_HOSTS — which names the instance answers to
 

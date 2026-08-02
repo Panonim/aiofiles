@@ -241,21 +241,30 @@ Nothing outside that list (plus loopback, where the bundled nginx lives) has its
 `X-Forwarded-*` headers believed, which is what the next two problems are about.
 Four things bite.
 
-**Progress bars never move.** Your proxy is buffering the SSE stream. The app
-sends `X-Accel-Buffering: no` and the bundled nginx turns off `proxy_buffering`,
-`proxy_cache` and `chunked_transfer_encoding` for `/api/events` — but an outer
-proxy has to be told separately. In nginx that is `proxy_buffering off` plus a
-`proxy_read_timeout` longer than your longest transcode. Caddy does not buffer by
-default.
+**Progress bars never move, and the header never leaves "connecting".** Your
+proxy is buffering the SSE stream. The bundled nginx turns off `proxy_buffering`
+and `proxy_cache` for `/api/events`, keeps the response chunked so an outer hop
+can forward it a piece at a time, and re-emits the app's `X-Accel-Buffering: no`
+(nginx consumes that header rather than passing it on, so it has to be set again
+on the way out). An outer nginx honours it; Caddy and Traefik do not, but they do
+not buffer a chunked `text/event-stream` either. If yours does, that is
+`proxy_buffering off` plus a `proxy_read_timeout` longer than your longest
+transcode. A buffered stream produces no error anywhere — `EventSource` fires
+neither `onopen` nor `onerror` — so a UI that loads fine but never updates is the
+symptom to look for.
 
 **Login succeeds and immediately bounces back to the login page.** The session
 cookie is issued with `Secure` only when the app can tell the original request was
-HTTPS — direct TLS, or `X-Forwarded-Proto: https` *from a trusted proxy*. If your
-proxy terminates TLS but does not forward that header, or forwards it but is not
-in `TRUSTED_PROXIES`, the cookie is issued without `Secure`, which still works;
-the broken direction is the reverse — a proxy claiming `https` while you browse
-over plain HTTP, in which case the browser silently drops the cookie and every
-request looks unauthenticated. Make the header match reality.
+HTTPS — direct TLS, or `X-Forwarded-Proto: https` *from a trusted proxy*. The
+bundled nginx passes your proxy's value through when the peer is in
+`TRUSTED_PROXIES` and overwrites it with `http` when it is not, so a proxy that
+terminates TLS but is not listed leaves the app believing the browser is on plain
+HTTP: no `Secure` on the cookie, and a `POST` from an `https://` page counted as
+cross-origin (403 `cross_origin`) on any browser that does not send
+`Sec-Fetch-Site`. The broken direction is the reverse — a proxy claiming `https`
+while you browse over plain HTTP, in which case the browser silently drops the
+cookie and every request looks unauthenticated. Make the header match reality,
+and list the proxy.
 
 **Login rate limiting counts the wrong address.** The limiter walks
 `X-Forwarded-For` from the right and takes the first hop that is not a trusted

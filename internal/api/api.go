@@ -113,5 +113,10 @@ func (s *server) routes() http.Handler {
 	// Outermost first: a panic anywhere below still becomes a logged 500, and
 	// a request to a name this instance does not answer to is turned away
 	// before any handler sees it.
-	return s.recoverMW(s.logMW(s.hostMW(s.originMW(s.limitBodyMW(mux)))))
+	//
+	// logMW sits outside recoverMW so that the statusWriter it installs is the
+	// one recoverMW sees. The other way round, recoverMW's "has the response
+	// already started?" check is handed the raw ResponseWriter, always answers
+	// no, and appends a 500 body to a reply that was already half sent.
+	return s.logMW(s.recoverMW(s.hostMW(s.originMW(s.limitBodyMW(mux)))))
 }
