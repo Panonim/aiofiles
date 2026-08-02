@@ -5,10 +5,49 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 jobs:
+  binaries:
+    name: Build and attach binaries
+    # Only a real release has somewhere to upload to; a manual dispatch run
+    # builds the image but skips this job.
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Mirrors the platforms the Docker image is built for; there is no
+        # bundled yt-dlp/ffmpeg/imagemagick here, so this is the bare Go
+        # binary only, for people who already have those tools on PATH.
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        env:
+          CGO_ENABLED: 0
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+          GOFLAGS: -trimpath
+        run: go build -ldflags="-s -w" -o aiofiles ./cmd/server
+
+      - name: Package
+        run: |
+          tar -czf aiofiles-linux-${{ matrix.goarch }}.tar.gz aiofiles
+          sha256sum aiofiles-linux-${{ matrix.goarch }}.tar.gz > aiofiles-linux-${{ matrix.goarch }}.tar.gz.sha256
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            aiofiles-linux-${{ matrix.goarch }}.tar.gz
+            aiofiles-linux-${{ matrix.goarch }}.tar.gz.sha256
+
   publish:
     name: Build and push image
     runs-on: ubuntu-latest
