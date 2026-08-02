@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/images/aiofiles-banner.svg" width="35%"><br>
+<p align="center"><img src="docs/images/aiofiles-banner.svg" width="45%"><br>
 <a href="docs/configuration.md">Configuration</a> - <a href="docs/api.md">API</a> - <a href="docs/troubleshooting.md">Troubleshooting</a> - <a href="LICENSE">License</a><br><br>AIOFiles is a self-hosted media toolkit for downloading videos, converting and compressing files, and processing images.<br> It runs as a web app backed by background workers, stores its data on disk, and exposes the same functionality through an HTTP API.</p>
 
 <p align="center"><img src="docs/images/preview_1.png" width="46%"><img src="docs/images/preview_2.png" width="51.6%"></p>
@@ -43,7 +43,7 @@ Everything is driven by environment variables. The defaults and the rules that a
 &nbsp;
 <picture><source media="(prefers-color-scheme: dark)" srcset="https://www.shieldcn.dev/github/release/panonim/aiofiles.svg?size=lg&amp;mode=dark&amp;theme=neutral&amp;font=space-grotesk"><img alt="Release" src="https://www.shieldcn.dev/github/release/panonim/aiofiles.svg?size=lg&amp;mode=light&amp;theme=neutral&amp;font=space-grotesk"></picture>
 &nbsp;
-<picture><source media="(prefers-color-scheme: dark)" srcset="https://www.shieldcn.dev/github/contributors/panonim/aiofiles.svg?theme=emerald&amp;size=lg&amp;mode=dark&amp;font=space-grotesk"><img alt="Contributors" src="https://www.shieldcn.dev/github/contributors/panonim/aiofiles.svg?theme=emerald&amp;size=lg&amp;mode=light&amp;font=space-grotesk"></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="https://www.shieldcn.dev/github/contributors/panonim/aiofiles.svg?theme=neutral&amp;size=lg&amp;mode=dark&amp;variant=secondary&amp;font=fira-code"><img alt="Contributors" src="https://www.shieldcn.dev/github/contributors/panonim/aiofiles.svg?theme=neutral&amp;size=lg&amp;mode=light&amp;variant=secondary&amp;font=fira-code"></picture>
 &nbsp;
 <picture><source media="(prefers-color-scheme: dark)" srcset="https://www.shieldcn.dev/github/last-commit/panonim/aiofiles.svg?variant=secondary&amp;size=lg&amp;mode=dark&amp;theme=neutral&amp;font=space-grotesk"><img alt="Last commit" src="https://www.shieldcn.dev/github/last-commit/panonim/aiofiles.svg?variant=secondary&amp;size=lg&amp;mode=light&amp;theme=neutral&amp;font=space-grotesk"></picture>
 &nbsp;

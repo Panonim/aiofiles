@@ -1,10 +1,24 @@
 name: CI
 
+# Only Go sources feed the build/vet/test steps, so doc- and asset-only
+# changes skip CI. schema.sql is go:embed'ed, hence included.
 on:
   push:
     branches: [main]
+    paths:
+      - '**.go'
+      - '**.sql'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/ci.yml'
   pull_request:
     branches: [main]
+    paths:
+      - '**.go'
+      - '**.sql'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/ci.yml'
 
 permissions:
   contents: read
