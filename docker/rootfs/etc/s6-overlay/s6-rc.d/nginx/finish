@@ -1,0 +1,8 @@
+#!/command/execlineb -S1
+# See aiofiles/finish. A dead nginx means nothing is listening on the
+# published port, which is exactly the "silently degraded" state a restart
+# policy should be allowed to fix - so stop the container and let Docker's
+# `restart: unless-stopped` restart it cleanly.
+if { eltest ${1} -ne 0 -a ${1} -ne 256 }
+foreground { redirfd -w 1 /run/s6-linux-init-container-results/exitcode echo ${1} }
+/run/s6/basedir/bin/halt

@@ -1,0 +1,110 @@
+name: Bug report
+description: Something in AIOFiles does not work the way it should
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before opening an issue, please check
+        [docs/troubleshooting.md](../blob/main/docs/troubleshooting.md) — several
+        common problems (upgrades from `mediatool`, permissions, upload limits)
+        are already documented there.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the problem and what you expected instead.
+      placeholder: |
+        A download job stays at 0% forever and never fails.
+        I expected it to either finish or move to the failed state.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The exact steps, including the URL, file, or preset if relevant.
+      placeholder: |
+        1. Open http://localhost:1144
+        2. Paste <url> into the download form
+        3. Submit and watch the job list
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of the app?
+      options:
+        - Downloads (yt-dlp)
+        - Convert / compress (ffmpeg)
+        - Images (ImageMagick)
+        - Uploads
+        - Job queue / progress updates (SSE)
+        - Authentication / sessions
+        - HTTP API
+        - Retention / cleanup
+        - Web UI (other)
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: AIOFiles version
+      description: Image tag, release, or commit you are running.
+      placeholder: "v1.4.0 / ghcr.io/panonim/aiofiles:latest / commit abc1234"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How are you running it?
+      options:
+        - Docker Compose
+        - Docker (plain `docker run`)
+        - Built from source
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: host
+    attributes:
+      label: Host
+      description: OS, architecture, and anything unusual about the storage backing `./data`.
+      placeholder: "Debian 12, amd64, ./data on an NFS mount"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Run with `LOG_LEVEL=debug`, reproduce, then paste the relevant output of
+        `docker compose logs -f`. Debug level includes the argv handed to each
+        subprocess, which is usually what identifies the failure.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant configuration
+      description: |
+        The environment variables you changed from the defaults in
+        [.env.example](../blob/main/.env.example).
+        **Do not paste `AUTH_PASSWORD` or `AUTH_PASSWORD_HASH`.**
+      render: shell
+      placeholder: |
+        MAX_CONCURRENT_JOBS=4
+        MAX_UPLOAD_MIB=8192
+        PUID=1000
+        PGID=1000

@@ -1,0 +1,10 @@
+#!/command/execlineb -S1
+# $1 = the service's exit code, or 256 if it was killed by an uncaught signal.
+#
+# 256 is what a normal `docker stop` looks like (s6 sends SIGTERM), so it is
+# deliberately not treated as a failure. Any other non-zero exit means the API
+# process died on its own; propagate the code and bring the whole container
+# down rather than serving a frontend with no backend behind it.
+if { eltest ${1} -ne 0 -a ${1} -ne 256 }
+foreground { redirfd -w 1 /run/s6-linux-init-container-results/exitcode echo ${1} }
+/run/s6/basedir/bin/halt

@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <title>Sign in · aiofiles</title>
+
+    <!-- Kept in step with index.html; see the note there. -->
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="/assets/aiofiles-icon-dark.svg"
+      media="(prefers-color-scheme: light)"
+    />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="/assets/aiofiles-icon-light.svg"
+      media="(prefers-color-scheme: dark)"
+    />
+    <link rel="alternate icon" href="/assets/favicon.ico" sizes="48x48 32x32 16x16" />
+    <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#191d23" media="(prefers-color-scheme: dark)" />
+    <script>
+      (function () {
+        var t = "light";
+        try {
+          var s = localStorage.getItem("aiofiles.theme");
+          t =
+            s === "light" || s === "dark"
+              ? s
+              : window.matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light";
+        } catch (e) {}
+        document.documentElement.setAttribute("data-theme", t);
+      })();
+    </script>
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/select.css" />
+    <script defer src="/vendor/lucide.min.js"></script>
+    <script defer src="/app.js"></script>
+    <script defer src="/select.js"></script>
+    <script defer src="/vendor/alpine.min.js"></script>
+  </head>
+
+  <body>
+    <div class="login-page" x-data="loginForm" x-cloak>
+      <div class="login-card">
+        <div class="login-head">
+          <span class="brand">
+            <span class="brand-mark brand-mark-lg">
+              <img src="/assets/aiofiles-icon-dark.svg" alt="" class="on-light" />
+              <img src="/assets/aiofiles-icon-light.svg" alt="" class="on-dark" />
+            </span>
+            aiofiles
+          </span>
+          <h1>Sign in</h1>
+        </div>
+
+        <form class="panel" x-on:submit.prevent="signIn()">
+          <div class="panel-body">
+            <div class="field">
+              <label class="label" for="username">Username</label>
+              <input
+                id="username"
+                type="text"
+                name="username"
+                autocomplete="username"
+                autocapitalize="none"
+                spellcheck="false"
+                required
+                x-model="username"
+                x-bind:disabled="checking"
+              />
+            </div>
+
+            <div class="field">
+              <label class="label" for="password">Password</label>
+              <input
+                id="password"
+                type="password"
+                name="password"
+                autocomplete="current-password"
+                required
+                x-model="password"
+                x-bind:disabled="checking"
+              />
+            </div>
+
+            <p class="inline-error" x-show="error" x-cloak>
+              <i data-lucide="alert-circle"></i>
+              <span x-text="error"></span>
+            </p>
+
+            <button
+              type="submit"
+              class="btn btn-primary"
+              x-bind:disabled="busy || checking"
+              style="width: 100%"
+            >
+              <span x-bind:class="busy ? 'spin' : ''">
+                <i data-lucide="log-in"></i>
+              </span>
+              <span x-text="busy ? 'Signing in…' : 'Sign in'">Sign in</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </body>
+</html>

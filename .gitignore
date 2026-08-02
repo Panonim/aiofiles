@@ -1,0 +1,29 @@
+# Runtime state - bind-mounted by docker-compose, never committed.
+/data/
+
+# Local secrets.
+.env
+.env.*
+!.env.example
+
+# Built Go binaries and test/coverage output.
+/aiofiles
+/out
+*.exe
+*.out
+coverage.*
+
+# SQLite database files.
+*.db
+*.db-wal
+*.db-shm
+
+# Editor / OS cruft.
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Internal build plan - developer scratchpad, not user-facing docs.
+/plan.md

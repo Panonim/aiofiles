@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policymap [
+<!ELEMENT policymap (policy)*>
+<!ATTLIST policymap xmlns CDATA #FIXED ''>
+<!ELEMENT policy EMPTY>
+<!ATTLIST policy xmlns CDATA #FIXED '' domain NMTOKEN #REQUIRED
+  name NMTOKEN #IMPLIED pattern CDATA #IMPLIED rights NMTOKEN #IMPLIED
+  stealth NMTOKEN #IMPLIED value CDATA #IMPLIED>
+]>
+<!--
+  Hardened ImageMagick policy. Installed as /etc/ImageMagick-7/policy.xml.
+
+  NO APOSTROPHE AND NO BACKTICK IN ANY COMMENT HERE. The XML reader in
+  ImageMagick 7.1.2 stops at either and silently drops every policy after it -
+  a file that looks hardened but is not. The Dockerfile greps
+  "magick -list policy" for the last pattern below to catch that.
+
+  magick picks its decoder from the magic bytes, not from the name the uploader
+  chose, so every coder linked into the binary is reachable from user input.
+  Everything is denied and only the formats this app offers are handed back.
+-->
+<policymap>
+
+  <!-- A bomb that clears the memory and map ceilings falls through to the
+       disk-backed pixel cache, so disk and a wall clock are capped too. -->
+  <policy domain="resource" name="memory" value="512MiB"/>
+  <policy domain="resource" name="map" value="1GiB"/>
+  <policy domain="resource" name="disk" value="1GiB"/>
+  <policy domain="resource" name="area" value="128MP"/>
+  <policy domain="resource" name="width" value="32KP"/>
+  <policy domain="resource" name="height" value="32KP"/>
+  <policy domain="resource" name="time" value="60"/>
+  <policy domain="resource" name="thread" value="2"/>
+  <!-- A GIF with a million tiny frames never trips the pixel limits. -->
+  <policy domain="resource" name="list-length" value="512"/>
+
+  <!-- No coder may shell out or read from a path of its own choosing. -->
+  <policy domain="delegate" rights="none" pattern="*"/>
+  <policy domain="module" rights="none" pattern="{PS,PDF,XPS,EPS,MSL,MVG,MAGICK,URL,HTTPS,FTP,TEXT,SHOW,WIN,PLT}"/>
+  <policy domain="path" rights="none" pattern="@*"/>
+
+  <!-- Deny every coder, then re-allow what presets.ImageFormats offers. -->
+  <policy domain="coder" rights="none" pattern="*"/>
+  <policy domain="coder" rights="read|write" pattern="{JPEG,JPG,JPE,PJPEG}"/>
+  <policy domain="coder" rights="read|write" pattern="{PNG,PNG8,PNG24,PNG32,PNG48,PNG64}"/>
+  <policy domain="coder" rights="read|write" pattern="{WEBP,AVIF,GIF,TIFF,TIF}"/>
+  <!-- read|write, not read: AVIF goes through libheif on Alpine, and a denied
+       write here is what turns out.avif into a mislabelled PNG. -->
+  <policy domain="coder" rights="read|write" pattern="{HEIC,HEIF}"/>
+  <!-- Write only, and only as the handoff to potrace. -->
+  <policy domain="coder" rights="write" pattern="{PBM,PGM,PNM}"/>
+
+  <!-- SVG is denied on purpose: the renderer ImageMagick would reach for
+       shares the MVG drawing engine, whose image primitive reads local files.
+       internal/runner/image.go handles both directions instead - in through
+       rsvg-convert, out by wrapping a PNG. The rest are the coders that
+       execute delegates or fetch URLs, named in case the allow list widens. -->
+  <policy domain="coder" rights="none" pattern="{MSL,MVG,MAGICK,URL,HTTPS,HTTP,FTP,EPHEMERAL,TEXT,LABEL,CAPTION,SHOW,WIN,PLT,XPS,PS,PS2,PS3,PDF,EPS,EPI,EPT,EPSF,EPSI,PCL,SVG,MSVG,MSVGZ,SCRIPT,INLINE}"/>
+
+  <!-- The @list.txt indirect read takes its file list from the caller. -->
+  <policy domain="delegate" rights="none" pattern="{ps,ps2,ps3,eps,pdf,xps,gs,https,http,ftp,show,win,print}"/>
+
+  <policy domain="system" name="shred" value="0"/>
+  <policy domain="system" name="max-memory-request" value="256MiB"/>
+
+  <policy domain="cache" name="memory-map" value="anonymous"/>
+  <policy domain="cache" name="synchronize" value="true"/>
+
+</policymap>

@@ -1,0 +1,6 @@
+#!/command/execlineb -P
+with-contenv
+fdmove -c 2 1
+importas -D aiofiles APP_USER APP_USER
+s6-setuidgid ${APP_USER}
+/usr/sbin/nginx -c /etc/nginx/nginx.conf

@@ -1,0 +1,48 @@
+services:
+  aiofiles:
+    image: ghcr.io/panonim/aiofiles:latest
+    container_name: aiofiles
+    restart: unless-stopped
+    ports:
+      - "1144:8000"
+
+    volumes:
+      - ./data/downloads:/data/downloads
+      - ./data/uploads:/data/uploads
+      - ./data/db:/data/db
+      - ./data/tmp:/data/tmp
+
+    environment:
+      # --- ownership / locale ---
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TZ: ${TZ:-UTC}
+
+      # --- behaviour ---
+      LOG_LEVEL: ${LOG_LEVEL:-warn}
+      MAX_CONCURRENT_JOBS: ${MAX_CONCURRENT_JOBS:-2}
+      QUEUE_DEPTH: ${QUEUE_DEPTH:-256}
+      DEFAULT_RETENTION_DAYS: ${DEFAULT_RETENTION_DAYS:-7}
+      # MiB, whole numbers only; 0 means unlimited in both the app and nginx.
+      MAX_UPLOAD_MIB: ${MAX_UPLOAD_MIB:-4096}
+
+      # --- auth ---
+      AUTH_USERNAME: ${AUTH_USERNAME:-}
+      AUTH_PASSWORD: ${AUTH_PASSWORD:-}
+      AUTH_PASSWORD_HASH: ${AUTH_PASSWORD_HASH:-}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-720}
+
+      # One-time repair pass after changing PUID/PGID: recursively chowns
+      # /data at startup. Leave at 0 for normal operation.
+      FIX_OWNERSHIP: ${FIX_OWNERSHIP:-0}
+
+
+    # Resource limits.
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: "2.0"
+    #       memory: 1G
+    #
+    # cpus: 2.0
+    # mem_limit: 1g

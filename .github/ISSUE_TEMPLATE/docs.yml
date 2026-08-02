@@ -1,0 +1,43 @@
+name: Documentation issue
+description: Something in the docs is wrong, missing, or misleading
+title: "[Docs]: "
+labels: ["documentation"]
+body:
+  - type: dropdown
+    id: page
+    attributes:
+      label: Which page?
+      options:
+        - README.md
+        - docs/configuration.md
+        - docs/api.md
+        - docs/troubleshooting.md
+        - .env.example
+        - docker-compose.yml
+        - Other / missing page
+    validations:
+      required: true
+
+  - type: input
+    id: location
+    attributes:
+      label: Section or line
+      placeholder: "docs/configuration.md — MAX_UPLOAD_MIB"
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is wrong?
+      description: Quote the current wording where possible, and say what actually happens.
+      placeholder: |
+        The docs say MAX_UPLOAD_MIB is enough on its own, but the reverse proxy
+        limit also has to be raised or the upload is rejected before it reaches
+        the app.
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested wording
+      description: Optional, but a concrete replacement is the fastest path to a merge.

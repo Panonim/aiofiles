@@ -1,0 +1,19 @@
+#!/command/execlineb -P
+with-contenv
+
+# daemons log to stderr; fold it into stdout so `docker logs` sees everything
+fdmove -c 2 1
+
+# APP_USER is written to /run/s6/container_environment by the init oneshot
+importas -D aiofiles APP_USER APP_USER
+
+# Keep every scratch write on the /data volume rather than the container's
+# writable layer: yt-dlp caches, ffmpeg two-pass logs, ImageMagick pixel cache.
+export HOME /data/tmp
+export TMPDIR /data/tmp
+export XDG_CACHE_HOME /data/tmp/cache
+export XDG_CONFIG_HOME /data/tmp/config
+export MAGICK_TMPDIR /data/tmp
+
+s6-setuidgid ${APP_USER}
+/usr/local/bin/aiofiles

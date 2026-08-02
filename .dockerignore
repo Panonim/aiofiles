@@ -1,0 +1,27 @@
+# Keep the build context small and, more importantly, stable: anything listed
+# here cannot invalidate a build cache layer.
+
+.git
+.gitignore
+.github/
+
+# Runtime state - bind-mounted at run time, never baked into the image.
+data/
+
+# Secrets and their template. Nothing in the image reads these; the container
+# gets its configuration from the environment at run time.
+.env
+.env.*
+
+# Docs and packaging metadata: read by humans, not by any build stage.
+*.md
+LICENSE
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# Editor / OS noise
+.idea/
+.vscode/
+*.swp
+.DS_Store

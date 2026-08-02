@@ -1,0 +1,296 @@
+/* aiofiles - select chrome. Loads after app.css and only adds to it.
+
+   Two paths: every <select> gets its own chevron, because the platform one
+   cannot be recoloured and looks wrong in the dark theme; on a fine pointer
+   select.js also paints a real listbox over the control. A touch device keeps
+   its native picker, so nothing below .xsel ever exists on a phone. */
+
+/* chevron */
+
+/* url() cannot interpolate a custom property, so the stroke colour has to be
+   baked into the data URI. These two are --muted from each theme. */
+:root,
+:root[data-theme="light"] {
+  --xsel-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23626c79' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+:root[data-theme="dark"] {
+  --xsel-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238d97a4' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+/* The custom control paints its marks as masks instead, so they take their
+   colour from a token and need no per-theme copy; a mask reads alpha only. */
+:root {
+  --xsel-mask-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  --xsel-mask-check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+}
+
+/* native select */
+
+select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  /* Matches the space the custom button leaves (8px padding + 6px gap + 14px
+     mark), so a control keeps its width whichever path renders it. */
+  padding-right: 28px;
+  background-image: var(--xsel-chevron);
+  background-repeat: no-repeat;
+  background-position: right 7px center;
+  background-size: 14px 14px;
+}
+
+/* app.css repaints the disabled background with the shorthand, which drops
+   the image with it. */
+select:disabled {
+  background-image: var(--xsel-chevron);
+}
+
+/* A multi-select is a box of rows: no chevron to replace, no room to spare. */
+select[multiple],
+select[size]:not([size="0"]):not([size="1"]) {
+  -webkit-appearance: auto;
+  -moz-appearance: auto;
+  appearance: auto;
+  padding-right: 8px;
+  background-image: none;
+  height: auto;
+}
+
+/* enhanced control */
+
+/* The <select> stays in flow, invisible, because Alpine owns its value and
+   options - and because that is what sizes the wrapper exactly as wide as the
+   native control would have been: widest option wins. */
+.xsel {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+
+.xsel > select {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.xsel-btn {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 100%;
+  padding: 0 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-base);
+  text-align: left;
+  cursor: pointer;
+}
+
+.xsel-btn:hover:not(:disabled) {
+  border-color: var(--muted);
+}
+
+/* The ring also shows while the list is open, so the detached popup is tied to
+   its control. A pointer click does not match :focus-visible, so
+   aria-expanded carries it. */
+.xsel-btn:focus-visible,
+.xsel-btn[aria-expanded="true"] {
+  outline: none;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px var(--ring-soft);
+}
+
+.xsel-btn[aria-invalid="true"] {
+  border-color: var(--err);
+}
+
+.xsel-btn:disabled {
+  background: var(--surface-3);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.xsel-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.xsel-arrow {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  background-color: var(--muted);
+  -webkit-mask: var(--xsel-mask-chevron) center / 14px 14px no-repeat;
+  mask: var(--xsel-mask-chevron) center / 14px 14px no-repeat;
+  transition: transform 90ms ease;
+}
+
+.xsel-btn[aria-expanded="true"] .xsel-arrow {
+  transform: rotate(180deg);
+}
+
+.xsel-btn:disabled .xsel-arrow {
+  background-color: var(--line-strong);
+}
+
+/* popup */
+
+/* Fixed and parented to <body>, so nothing it sits inside can clip it. The
+   z-index clears the sticky panel foot (10), top bar (20), phone nav (30) and
+   queue (40). It stays in the document while closed so aria-controls always
+   resolves; [hidden] keeps it out of the layout and the a11y tree. */
+.xsel-pop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 60;
+  display: block;
+  min-width: 0;
+  max-width: 92vw;
+  max-height: 288px;
+  padding: 3px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  font-family: var(--font-ui);
+  font-size: var(--fs-base);
+  color: var(--text);
+  opacity: 0;
+  transform: translateY(-2px);
+  transition:
+    opacity 90ms ease,
+    transform 90ms ease;
+}
+
+.xsel-pop[hidden] {
+  display: none;
+}
+
+.xsel-pop.is-above {
+  transform: translateY(2px);
+}
+
+.xsel-pop.is-open {
+  opacity: 1;
+  transform: none;
+}
+
+.xsel-opt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 3px 6px 3px 8px;
+  border-radius: 2px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.xsel-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The tick marks the value, the wash marks where the keyboard is: one
+   background for both loses the current value as the cursor moves off it. */
+.xsel-opt[aria-selected="true"] {
+  font-weight: 500;
+}
+
+.xsel-opt.is-active {
+  background: var(--surface-3);
+}
+
+.xsel-tick {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  background-color: var(--text);
+  -webkit-mask: var(--xsel-mask-check) center / 13px 13px no-repeat;
+  mask: var(--xsel-mask-check) center / 13px 13px no-repeat;
+  visibility: hidden;
+}
+
+.xsel-opt[aria-selected="true"] .xsel-tick {
+  visibility: visible;
+}
+
+.xsel-opt[aria-disabled="true"] {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.xsel-opt[aria-disabled="true"] .xsel-tick {
+  background-color: var(--muted);
+}
+
+.xsel-group + .xsel-group .xsel-group-label {
+  border-top: 1px solid var(--line);
+  margin-top: 3px;
+  padding-top: 7px;
+}
+
+.xsel-group-label {
+  padding: 5px 8px 3px;
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Options arrive from /api/presets after first paint, so an empty list is a
+   real state the user can open into. */
+.xsel-empty {
+  padding: 6px 8px;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+/* pointer */
+
+/* A tablet that gains a mouse switches paths at runtime; these keep the button
+   sized like every other control while it is up. 16px matches the rule app.css
+   uses to stop iOS zooming on focus. */
+@media (pointer: coarse) {
+  .xsel-btn {
+    font-size: 16px;
+  }
+  .xsel-opt {
+    min-height: 36px;
+  }
+}
+
+/* app.css lets the status filter grow to fill the phone layout; the wrapper is
+   the flex item now, so the rule has to follow it. */
+@media (max-width: 680px) {
+  .page-head .btn-row .xsel {
+    flex: 1 1 auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .xsel-pop,
+  .xsel-arrow {
+    transition: none;
+  }
+  .xsel-pop {
+    transform: none;
+  }
+}

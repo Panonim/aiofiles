@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Troubleshooting guide
+    url: https://github.com/panonim/aiofiles/blob/main/docs/troubleshooting.md
+    about: Upgrades, permissions, upload limits, and other common problems are already covered here.
+  - name: Configuration reference
+    url: https://github.com/panonim/aiofiles/blob/main/docs/configuration.md
+    about: Every environment variable, its default, and the rules that are easy to miss.
+  - name: HTTP API reference
+    url: https://github.com/panonim/aiofiles/blob/main/docs/api.md
+    about: Endpoints, payloads, and job states for driving AIOFiles without the web UI.

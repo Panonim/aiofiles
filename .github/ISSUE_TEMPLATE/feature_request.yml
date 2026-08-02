@@ -1,0 +1,57 @@
+name: Feature request
+description: Suggest a new capability or an improvement to an existing one
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the situation you run into today, not the solution yet.
+      placeholder: |
+        I convert the same set of files with identical ffmpeg settings every week
+        and have to re-enter them each time.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should AIOFiles do? Include the shape of the config or API if you have one in mind.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of the app?
+      options:
+        - Downloads (yt-dlp)
+        - Convert / compress (ffmpeg)
+        - Images (ImageMagick)
+        - Uploads
+        - Job queue / progress updates (SSE)
+        - Authentication / sessions
+        - HTTP API
+        - Retention / cleanup
+        - Configuration / deployment
+        - Web UI (other)
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Workarounds you tried, other tools that do this, or why the existing options fall short.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I checked [docs/configuration.md](../blob/main/docs/configuration.md) and [docs/api.md](../blob/main/docs/api.md) and this is not already possible.
+          required: true
+        - label: I searched existing issues for the same request.
+          required: true

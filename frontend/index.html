@@ -1,0 +1,1628 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <title>aiofiles</title>
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="/assets/aiofiles-icon-dark.svg"
+      media="(prefers-color-scheme: light)"
+    />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="/assets/aiofiles-icon-light.svg"
+      media="(prefers-color-scheme: dark)"
+    />
+    <link rel="alternate icon" href="/assets/favicon.ico" sizes="48x48 32x32 16x16" />
+    <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
+    <link rel="manifest" href="/assets/site.webmanifest" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#191d23" media="(prefers-color-scheme: dark)" />
+    <!-- Sets the theme before the stylesheet loads so the right one paints
+         first. -->
+    <script>
+      (function () {
+        var t = "light";
+        try {
+          var s = localStorage.getItem("aiofiles.theme");
+          t =
+            s === "light" || s === "dark"
+              ? s
+              : window.matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light";
+        } catch (e) {}
+        document.documentElement.setAttribute("data-theme", t);
+      })();
+    </script>
+    <link rel="stylesheet" href="/app.css" />
+    <!-- Must follow app.css: it overrides the select padding and background. -->
+    <link rel="stylesheet" href="/select.css" />
+    <script defer src="/vendor/lucide.min.js"></script>
+    <script defer src="/app.js"></script>
+    <!-- Themed listbox where there is a mouse; native control on touch. -->
+    <script defer src="/select.js"></script>
+    <script defer src="/vendor/alpine.min.js"></script>
+  </head>
+
+  <body x-data="mediaApp" x-cloak>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <span class="brand">
+          <span class="brand-mark">
+            <img src="/assets/aiofiles-icon-dark.svg" alt="" class="on-light" />
+            <img src="/assets/aiofiles-icon-light.svg" alt="" class="on-dark" />
+          </span>
+          aiofiles
+        </span>
+
+        <!-- One nav, two shapes: a row in the top bar on a desktop, a fixed
+             thumb-height bar along the bottom edge on a phone. -->
+        <nav class="nav" aria-label="Sections">
+          <button
+            type="button"
+            class="nav-tab"
+            x-bind:aria-current="tab === 'new' ? 'page' : false"
+            x-on:click="go('new')"
+          >
+            <i data-lucide="plus"></i> <span class="nav-label">New job</span>
+          </button>
+          <button
+            type="button"
+            class="nav-tab"
+            x-bind:aria-current="tab === 'jobs' ? 'page' : false"
+            x-on:click="go('jobs')"
+          >
+            <i data-lucide="list"></i> <span class="nav-label">Jobs</span>
+            <span
+              class="nav-count num"
+              x-show="runningCount > 0"
+              x-text="runningCount"
+            ></span>
+          </button>
+          <button
+            type="button"
+            class="nav-tab"
+            x-bind:aria-current="tab === 'settings' ? 'page' : false"
+            x-on:click="go('settings')"
+          >
+            <i data-lucide="settings"></i> <span class="nav-label">Settings</span>
+          </button>
+        </nav>
+
+        <!-- Lucide dropped its brand icons, so the mark is inline. -->
+        <a
+          class="topbar-link"
+          href="https://github.com/panonim/aiofiles"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="aiofiles on GitHub"
+          title="aiofiles on GitHub"
+        >
+          <svg viewBox="0 0 16 16" width="18" height="18" fill="currentColor" aria-hidden="true">
+            <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.4 7.4 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/>
+          </svg>
+        </a>
+      </div>
+    </header>
+
+    <main>
+      <div class="banner banner-error" x-show="offline" x-transition>
+        <i data-lucide="unplug"></i>
+        <div class="banner-body">
+          <strong>Cannot reach the server</strong>
+          <span x-text="offline"></span>
+        </div>
+        <button type="button" class="btn btn-sm" x-on:click="bootstrap()">
+          Retry
+        </button>
+      </div>
+
+      <!-- new job -->
+      <section x-show="tab === 'new'" x-cloak>
+        <div class="page-head">
+          <div>
+            <h1>New job</h1>
+            <p class="sub">
+              Pull a video from a link, or hand a file to the converter.
+            </p>
+          </div>
+        </div>
+
+        <div class="segbar" role="tablist" aria-label="Job type">
+          <button
+            type="button"
+            class="seg"
+            role="tab"
+            x-bind:aria-selected="jobType === 'download'"
+            x-on:click="pickType('download')"
+          >
+            <i data-lucide="cloud-download"></i> Download
+          </button>
+          <button
+            type="button"
+            class="seg"
+            role="tab"
+            x-bind:aria-selected="jobType === 'convert'"
+            x-on:click="pickType('convert')"
+          >
+            <i data-lucide="repeat"></i> Convert
+          </button>
+          <button
+            type="button"
+            class="seg"
+            role="tab"
+            x-bind:aria-selected="jobType === 'compress'"
+            x-on:click="pickType('compress')"
+          >
+            <i data-lucide="minimize-2"></i> Compress
+          </button>
+        </div>
+
+        <!-- download -->
+        <form
+          class="panel"
+          x-show="jobType === 'download'"
+          x-on:submit.prevent="submit('download')"
+        >
+          <div class="panel-head">
+            <span class="eyebrow">Source</span>
+          </div>
+          <div class="panel-body">
+            <div class="field field-wide">
+              <label class="label" for="dl-url">Link</label>
+              <div class="btn-row url-row">
+                <input
+                  id="dl-url"
+                  type="url"
+                  placeholder="https://www.youtube.com/watch?v=…"
+                  x-model="probe.url"
+                  x-bind:aria-invalid="errors.download.url ? 'true' : 'false'"
+                  x-on:keydown.enter.prevent="fetchFormats()"
+                />
+                <button
+                  type="button"
+                  class="btn"
+                  x-on:click="fetchFormats()"
+                  x-bind:disabled="probe.busy"
+                >
+                  <span class="btn-ico" x-bind:class="probe.busy ? 'spin' : ''">
+                    <i data-lucide="search"></i>
+                  </span>
+                  <span x-text="probe.busy ? 'Fetching…' : 'Fetch formats'"
+                    >Fetch formats</span
+                  >
+                </button>
+              </div>
+              <span
+                class="field-error"
+                x-show="errors.download.url"
+                x-cloak
+              >
+                <i data-lucide="alert-circle"></i>
+                <span x-text="errors.download.url"></span>
+              </span>
+              <span class="hint" x-show="!errors.download.url">
+                Any site yt-dlp supports. Fetch formats first to pick a
+                specific stream.
+              </span>
+            </div>
+
+            <p class="inline-error" x-show="probe.error" x-cloak>
+              <i data-lucide="alert-circle"></i>
+              <span x-text="probe.error"></span>
+            </p>
+
+            <template x-if="probe.result">
+              <div style="margin-top: 16px">
+                <div class="probe">
+                  <img
+                    class="probe-thumb"
+                    x-show="probe.result.thumbnail"
+                    x-bind:src="probe.result.thumbnail"
+                    alt=""
+                  />
+                  <div class="probe-meta">
+                    <span class="probe-title" x-text="probe.result.title"></span>
+                    <span class="facts">
+                      <span
+                        x-show="probe.result.uploader"
+                        x-text="probe.result.uploader"
+                      ></span>
+                      <span
+                        x-show="probe.result.duration"
+                        x-text="duration(probe.result.duration)"
+                      ></span>
+                      <span x-text="probe.result.extractor"></span>
+                      <span x-show="probe.result.is_playlist">playlist</span>
+                    </span>
+                    <a
+                      x-show="probe.result.webpage_url"
+                      x-bind:href="probe.result.webpage_url"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="mono truncate"
+                      x-text="probe.result.webpage_url"
+                    ></a>
+                  </div>
+                </div>
+
+                <div class="segbar compact" style="margin: 16px 0 12px">
+                  <button
+                    type="button"
+                    class="seg"
+                    x-bind:aria-pressed="dl.mode === 'video'"
+                    x-on:click="setMode('video')"
+                  >
+                    <i data-lucide="film"></i> Video
+                  </button>
+                  <button
+                    type="button"
+                    class="seg"
+                    x-bind:aria-pressed="dl.mode === 'audio'"
+                    x-on:click="setMode('audio')"
+                  >
+                    <i data-lucide="music"></i> Audio only
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  class="disclosure"
+                  x-on:click="dl.showFormats = !dl.showFormats"
+                  x-bind:aria-expanded="dl.showFormats ? 'true' : 'false'"
+                  aria-controls="dl-formats"
+                >
+                  <!-- One static icon rotated by CSS, not two swapped: lucide
+                       replaces the <i> with an <svg> on redraw, so a bound
+                       data-lucide cannot animate between states. -->
+                  <i data-lucide="chevron-right"></i>
+                  <span>Pick a specific stream</span>
+                  <span class="hint" x-text="formatSummary"></span>
+                </button>
+
+                <div class="table-scroll" id="dl-formats" x-show="dl.showFormats" x-cloak>
+                  <table class="formats">
+                    <caption class="sr-only">
+                      Available formats. Pick one, or leave Best available
+                      selected.
+                    </caption>
+                    <thead>
+                      <tr>
+                        <th scope="col"><span class="sr-only">Pick</span></th>
+                        <th scope="col" data-col="id">ID</th>
+                        <th scope="col" data-col="ext">Ext</th>
+                        <th scope="col">Resolution</th>
+                        <th scope="col" class="num" data-col="fps">FPS</th>
+                        <th scope="col" data-col="vcodec">Video</th>
+                        <th scope="col">Audio</th>
+                        <th scope="col" class="num">Size</th>
+                        <th scope="col" data-col="note">Note</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr
+                        x-bind:aria-selected="dl.format_id === ''"
+                        x-on:click="dl.format_id = ''"
+                      >
+                        <td class="pick">
+                          <input
+                            type="radio"
+                            name="format_id"
+                            value=""
+                            x-model="dl.format_id"
+                            aria-label="Best available"
+                          />
+                        </td>
+                        <td class="mono" data-col="id">best</td>
+                        <td colspan="7" class="muted">
+                          Best available - let the server choose
+                        </td>
+                      </tr>
+                      <template x-for="f in probeFormats" :key="f.id">
+                        <tr
+                          x-bind:aria-selected="dl.format_id === f.id"
+                          x-on:click="dl.format_id = f.id"
+                        >
+                          <td class="pick">
+                            <input
+                              type="radio"
+                              name="format_id"
+                              x-bind:value="f.id"
+                              x-model="dl.format_id"
+                              x-bind:aria-label="'Format ' + f.id"
+                            />
+                          </td>
+                          <td class="mono" data-col="id" x-text="f.id"></td>
+                          <td class="mono" data-col="ext" x-text="f.ext"></td>
+                          <td class="mono" x-text="f.resolution || '-'"></td>
+                          <td class="num" data-col="fps" x-text="f.fps || '-'"></td>
+                          <td class="mono" data-col="vcodec" x-text="f.vcodec || '-'"></td>
+                          <td class="mono" x-text="f.acodec || '-'"></td>
+                          <td class="num" x-text="bytes(f.filesize)"></td>
+                          <td
+                            class="muted truncate"
+                            data-col="note"
+                            x-text="f.note || ''"
+                          ></td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </div>
+                <span class="hint" style="display: block; margin-top: 8px"
+                  x-show="dl.showFormats || mergesAudio">
+                  <span x-show="mergesAudio" x-cloak>
+                    That stream carries no audio of its own - the best audio
+                    track is merged in automatically.
+                  </span>
+                  <span x-show="!mergesAudio">
+                    Rows showing <span class="mono">none</span> under Audio are
+                    video-only; audio is merged in for you.
+                  </span>
+                </span>
+                <span class="field-error" x-show="errors.download.format_id">
+                  <i data-lucide="alert-circle"></i>
+                  <span x-text="errors.download.format_id"></span>
+                </span>
+              </div>
+            </template>
+
+            <div class="field-grid" style="margin-top: 16px">
+              <div class="field" x-show="dl.mode === 'video'">
+                <label class="label" for="dl-container">Container</label>
+                <select
+                  id="dl-container"
+                  x-model="dl.container"
+                  x-bind:aria-invalid="errors.download.container ? 'true' : 'false'"
+                >
+                  <template
+                    x-for="o in options('video_containers')"
+                    :key="o.value"
+                  >
+                    <option x-bind:value="o.value" x-text="o.label"
+                      x-bind:selected="o.value === String(dl.container)"></option>
+                  </template>
+                </select>
+                <span class="field-error" x-show="errors.download.container">
+                  <i data-lucide="alert-circle"></i>
+                  <span x-text="errors.download.container"></span>
+                </span>
+              </div>
+
+              <div class="field" x-show="dl.mode === 'audio'">
+                <label class="label" for="dl-audio-format">Audio format</label>
+                <select
+                  id="dl-audio-format"
+                  x-model="dl.audio_format"
+                  x-bind:aria-invalid="errors.download.audio_format ? 'true' : 'false'"
+                >
+                  <template
+                    x-for="o in options('audio_formats')"
+                    :key="o.value"
+                  >
+                    <option x-bind:value="o.value" x-text="o.label"
+                      x-bind:selected="o.value === String(dl.audio_format)"></option>
+                  </template>
+                </select>
+                <span class="field-error" x-show="errors.download.audio_format">
+                  <i data-lucide="alert-circle"></i>
+                  <span x-text="errors.download.audio_format"></span>
+                </span>
+              </div>
+
+              <div class="field" x-show="dl.mode === 'audio'">
+                <label class="label" for="dl-audio-bitrate">Audio bitrate</label>
+                <select id="dl-audio-bitrate" x-model="dl.audio_bitrate">
+                  <template
+                    x-for="o in options('audio_bitrates')"
+                    :key="o.value"
+                  >
+                    <option x-bind:value="o.value" x-text="o.label"
+                      x-bind:selected="o.value === String(dl.audio_bitrate)"></option>
+                  </template>
+                </select>
+                <span class="field-error" x-show="errors.download.audio_bitrate">
+                  <i data-lucide="alert-circle"></i>
+                  <span x-text="errors.download.audio_bitrate"></span>
+                </span>
+              </div>
+
+              <div class="field">
+                <label class="label" for="dl-retention">Keep the file for</label>
+                <select id="dl-retention" x-model="dl.retention_days">
+                  <template
+                    x-for="o in options('retention_choices')"
+                    :key="o.value"
+                  >
+                    <option x-bind:value="o.value" x-text="o.label"
+                      x-bind:selected="o.value === String(dl.retention_days)"></option>
+                  </template>
+                </select>
+                <span class="field-error" x-show="errors.download.retention_days">
+                  <i data-lucide="alert-circle"></i>
+                  <span x-text="errors.download.retention_days"></span>
+                </span>
+              </div>
+
+              <fieldset
+                class="field field-wide"
+                style="border: 0; margin: 0; padding: 0"
+              >
+                <legend class="label" style="padding: 0">Embed</legend>
+                <div class="check-row" style="margin-top: 5px">
+                  <label class="check" x-show="dl.mode === 'video'">
+                    <input type="checkbox" x-model="dl.embed_subs" />
+                    Subtitles
+                  </label>
+                  <label class="check">
+                    <input type="checkbox" x-model="dl.embed_thumbnail" />
+                    Thumbnail
+                  </label>
+                  <label class="check">
+                    <input type="checkbox" x-model="dl.embed_metadata" />
+                    Title and chapter metadata
+                  </label>
+                </div>
+              </fieldset>
+            </div>
+
+            <p class="inline-error" x-show="formError.download" x-cloak>
+              <i data-lucide="alert-circle"></i>
+              <span x-text="formError.download"></span>
+            </p>
+          </div>
+
+          <div class="panel-foot">
+            <span class="hint">
+              <span x-show="dl.format_id" class="mono" x-text="dl.format_id"></span>
+              <span x-show="!dl.format_id">Best available format</span>
+            </span>
+            <button
+              type="submit"
+              class="btn btn-primary"
+              x-bind:disabled="submitting === 'download'"
+            >
+              <i data-lucide="play"></i>
+              <span
+                x-text="submitting === 'download' ? 'Starting…' : 'Start download'"
+                >Start download</span
+              >
+            </button>
+          </div>
+        </form>
+
+        <!-- convert -->
+        <form
+          class="panel"
+          x-show="jobType === 'convert'"
+          x-on:submit.prevent="submit('convert')"
+        >
+          <div class="panel-head"><span class="eyebrow">Source file</span></div>
+          <div class="panel-body">
+            <template x-if="!uploads.convert.length">
+              <label
+                class="dropzone"
+                x-bind:class="dragging.convert ? 'is-over' : ''"
+                x-on:dragover.prevent="dragging.convert = true"
+                x-on:dragleave.prevent="dragging.convert = false"
+                x-on:drop.prevent="onDrop($event, 'convert')"
+              >
+                <i data-lucide="upload"></i>
+                <strong>Drop a video or image here</strong>
+                <span class="hint">
+                  or click to browse - up to
+                  <span x-text="bytes(maxUploadBytes)"></span>
+                </span>
+                <input
+                  type="file"
+                  multiple
+                  x-on:change="onPick($event, 'convert')"
+                  aria-label="Choose a video or image to convert"
+                />
+              </label>
+            </template>
+
+            <template x-if="uploads.convert.length">
+              <div class="file-list">
+                <template x-for="u in uploads.convert" :key="u.uid">
+                  <div class="file-card">
+                    <span class="file-icon">
+                      <i x-bind:data-lucide="u.kind === 'image' ? 'file-image' : 'file-video'"></i>
+                    </span>
+                    <div class="file-body">
+                      <div class="file-name truncate" x-text="u.name"></div>
+                      <div class="mono muted">
+                        <span x-text="bytes(u.size)"></span>
+                        <span x-show="u.uploading" x-text="' · uploading ' + u.progress + '%'"></span>
+                        <span x-show="u.upload_id && !u.uploading"> · ready</span>
+                      </div>
+                      <div class="bar" x-show="u.uploading">
+                        <span x-bind:style="'width:' + u.progress + '%'"></span>
+                      </div>
+                      <p class="inline-error" x-show="u.error">
+                        <i data-lucide="alert-circle"></i>
+                        <span x-text="u.error"></span>
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      class="btn btn-quiet btn-icon"
+                      x-on:click="removeUpload('convert', u.uid)"
+                      x-bind:aria-label="'Remove ' + u.name"
+                    >
+                      <i data-lucide="x"></i>
+                    </button>
+                  </div>
+                </template>
+
+                <div class="file-list-foot">
+                  <label class="btn btn-sm file-add">
+                    <i data-lucide="plus"></i>
+                    <span x-text="uploadKind('convert') === 'image' ? 'Add more images' : 'Add more videos'"
+                      >Add more</span>
+                    <input type="file" multiple x-on:change="onPick($event, 'convert')" />
+                  </label>
+                  <span class="hint" x-text="uploads.convert.length + ' file' + (uploads.convert.length === 1 ? '' : 's')"></span>
+                  <button type="button" class="btn btn-sm btn-quiet" x-on:click="clearUploads('convert')">
+                    Remove all
+                  </button>
+                </div>
+              </div>
+            </template>
+
+            <div
+              class="field-grid"
+              style="margin-top: 16px"
+              x-show="uploadKind('convert') === 'video'"
+              x-cloak
+            >
+              <div class="field field-wide">
+                <label class="label" for="cv-preset">What matters most</label>
+                <select
+                  id="cv-preset"
+                  x-model="forms.convert.preset"
+                  x-on:change="onPresetChange()"
+                  x-bind:aria-invalid="errors.convert.preset ? 'true' : 'false'"
+                >
+                  <template x-for="o in options('encode_presets')" :key="o.value">
+                    <option x-bind:value="o.value" x-text="o.label"
+                      x-bind:selected="o.value === String(forms.convert.preset)"></option>
+                  </template>
+                </select>
+                <span class="hint" x-show="!convertIsCustom">
+                  Sets the encode speed and quality below. Change either and
+                  this switches to Custom.
+                </span>
+                <span class="field-error" x-show="errors.convert.preset">
+                  <i data-lucide="alert-circle"></i>
+                  <span x-text="errors.convert.preset"></span>
+                </span>
+              </div>
+
+              <div class="field">
+                <label class="label" for="cv-container">Container</label>
+                <select
+                  id="cv-container"
+                  x-model="forms.convert.container"
+                  x-bind:aria-invalid="errors.convert.container ? 'true' : 'false'"
+                >
+                  <template
+                    x-for="o in options('video_containers')"
+                    :key="o.value"
+                  >
+                    <option x-bind:value="o.value" x-text="o.label"
+                      x-bind:selected="o.value === String(forms.convert.container)"></option>
+                  </template>
+                </select>
+                <span class="field-error" x-show="errors.convert.container">
+                  <i data-lucide="alert-circle"></i>
+                  <span x-text="errors.convert.container"></span>
+                </span>
+              </div>
+
+              <div class="field">
+                <label class="label" for="cv-vcodec">Video codec</label>
+                <select
+                  id="cv-vcodec"
+                  x-model="forms.convert.video_codec"
+                  x-on:change="onCodecChange()"
+                  x-bind:aria-invalid="errors.convert.video_codec ? 'true' : 'false'"
+                >
+                  <template x-for="o in convertCodecOptions" :key="o.value">
+                    <option x-bind:value="o.value" x-text="o.label"
+                      x-bind:selected="o.value === String(forms.convert.video_codec)"></option>
+                  </template>
+                </select>
+                <span class="field-error" x-show="errors.convert.video_codec">
+                  <i data-lucide="alert-circle"></i>
+                  <span x-text="errors.convert.video_codec"></span>
+                </span>
+              </div>
+
+              <div class="field">
+                <label class="label" for="cv-speed">Encoding effort</label>
+                <select
+                  id="cv-speed"
+                  x-model="forms.convert.speed"
+                  x-on:change="onManualEncodeEdit()"
+                  x-bind:class="flashClass('convert', 'speed')"
+                >
+                  <template
+                    x-for="o in options('encode_speeds')"
+                    :key="o.value"
+                  >
+                    <option x-bind:value="o.value" x-text="o.label"
+                      x-bind:selected="o.value === String(forms.convert.speed)"></option>
+                  </template>
+                </select>
+                <span class="hint">Slower = smaller file, same quality.</span>
+              </div>
+
+              <div class="field field-range">
+                <label class="label" for="cv-crf">
+                  Quality (CRF)
+                  <span class="muted" x-show="!crfEnabled">
+                    - not used when copying the video stream</span
+                  >
+                </label>
+                <div class="range-row">
+                  <input
+                    id="cv-crf"
+                    type="range"
+                    step="1"
+                    x-model.number="forms.convert.crf"
+                    x-on:change="onManualEncodeEdit()"
+                    x-bind:min="crfBounds() ? crfBounds()[0] : 0"
+                    x-bind:max="crfBounds() ? crfBounds()[1] : 100"
+                    x-bind:disabled="!crfEnabled"
+                    x-bind:aria-valuetext="'CRF ' + forms.convert.crf"
+                  />
+                  <output class="range-value" for="cv-crf" x-text="forms.convert.crf"
+                    >23</output
+                  >
+                </div>
+                <div class="range-scale" x-show="crfEnabled">
+                  <span
+                    x-text="'better · ' + (crfBounds() ? crfBounds()[0] : '')"
+                  ></span>
+                  <span
+                    x-text="(crfBounds() ? crfBounds()[1] : '') + ' · smaller'"
+                  ></span>
+                </div>
+                <span class="field-error" x-show="errors.convert.crf">
+                  <i data-lucide="alert-circle"></i>
+                  <span x-text="errors.convert.crf"></span>
+                </span>
+              </div>
+
+              <div class="field">
+                <label class="label" for="cv-res">Resolution</label>
+                <select id="cv-res" x-model="forms.convert.resolution">
+                  <template
+                    x-for="o in options('resolutions')"
+                    :key="o.value"
+                  >
+                    <option x-bind:value="o.value" x-text="o.label"
+                      x-bind:selected="o.value === String(forms.convert.resolution)"></option>
+                  </template>
+                </select>
+              </div>
+
+              <div class="field">
+                <label class="label" for="cv-fps">Frame rate</label>
+                <select id="cv-fps" x-model="forms.convert.frame_rate">
+                  <template
+                    x-for="o in options('frame_rates')"
+                    :key="o.value"
+                  >
+                    <option x-bind:value="o.value" x-text="o.label"
+                      x-bind:selected="o.value === String(forms.convert.frame_rate)"></option>
+                  </template>
+                </select>
+              </div>
+
+              <div class="field">
+                <label class="label" for="cv-acodec">Audio codec</label>
+                <select
+                  id="cv-acodec"
+                  x-model="forms.convert.audio_codec"
+                  x-bind:aria-invalid="errors.convert.audio_codec ? 'true' : 'false'"
+                >
+                  <template
+                    x-for="o in options('audio_codecs')"
+                    :key="o.value"
+                  >
+                    <option x-bind:value="o.value" x-text="o.label"
+                      x-bind:selected="o.value === String(forms.convert.audio_codec)"></option>
+                  </template>
+                </select>
+                <span class="field-error" x-show="errors.convert.audio_codec">
+                  <i data-lucide="alert-circle"></i>
+                  <span x-text="errors.convert.audio_codec"></span>
+                </span>
+              </div>
+
+              <div class="field">
+                <label class="label" for="cv-abitrate">Audio bitrate</label>
+                <select
+                  id="cv-abitrate"
+                  x-model="forms.convert.audio_bitrate"
+                  x-bind:disabled="['none','copy','flac'].includes(forms.convert.audio_codec)"
+                >
+                  <template
+                    x-for="o in options('audio_bitrates')"
+                    :key="o.value"
+                  >
+                    <option x-bind:value="o.value" x-text="o.label"
+                      x-bind:selected="o.value === String(forms.convert.audio_bitrate)"></option>
+                  </template>
+                </select>
+                <span class="field-error" x-show="errors.convert.audio_bitrate">
+                  <i data-lucide="alert-circle"></i>
+                  <span x-text="errors.convert.audio_bitrate"></span>
+                </span>
+              </div>
+
+              <div class="field">
+                <label class="label" for="cv-retention">Keep the file for</label>
+                <select id="cv-retention" x-model="forms.convert.retention_days">
+                  <template
+                    x-for="o in options('retention_choices')"
+                    :key="o.value"
+                  >
+                    <option x-bind:value="o.value" x-text="o.label"
+                      x-bind:selected="o.value === String(forms.convert.retention_days)"></option>
+                  </template>
+                </select>
+              </div>
+
+              <div class="field field-wide">
+                <label class="check">
+                  <input type="checkbox" x-model="forms.convert.strip_metadata" />
+                  Strip metadata from the output
+                </label>
+              </div>
+            </div>
+
+            <div
+              class="field-grid"
+              style="margin-top: 16px"
+              x-show="uploadKind('convert') === 'image'"
+              x-cloak
+            >
+              <div class="field">
+                <label class="label" for="im-format">Format</label>
+                <select
+                  id="im-format"
+                  x-model="forms.image.format"
+                  x-bind:aria-invalid="errors.convert.format ? 'true' : 'false'"
+                >
+                  <template x-for="o in imageFormatOptions()" :key="o.value">
+                    <option x-bind:value="o.value" x-text="o.label"
+                      x-bind:selected="o.value === String(forms.image.format)"></option>
+                  </template>
+                </select>
+                <span class="field-error" x-show="errors.convert.format">
+                  <i data-lucide="alert-circle"></i>
+                  <span x-text="errors.convert.format"></span>
+                </span>
+              </div>
+
+              <div class="field" x-show="forms.image.format === 'svg_trace'" x-cloak>
+                <label class="label" for="im-trace">Trace</label>
+                <select id="im-trace" x-model="forms.image.trace">
+                  <template x-for="o in options('trace_targets')" :key="o.value">
+                    <option x-bind:value="o.value" x-text="o.label"
+                      x-bind:selected="o.value === String(forms.image.trace)"></option>
+                  </template>
+                </select>
+                <span class="hint">Everything on the other side becomes empty space.</span>
+              </div>
+
+              <div class="field" x-show="svgInput" x-cloak>
+                <label class="label" for="im-svg-scale">Render size</label>
+                <div class="range-row">
+                  <input
+                    id="im-svg-scale"
+                    type="range"
+                    min="0"
+                    max="6"
+                    step="1"
+                    x-model.number="forms.image.svg_scale"
+                    x-on:input="applySVGScale()"
+                  />
+                  <output class="range-value" for="im-svg-scale"
+                    x-text="svgRenderSize.w + ' x ' + svgRenderSize.h"></output>
+                </div>
+              </div>
+
+              <div class="field" x-show="!svgInput" x-cloak>
+                <label class="label" for="im-width">Width</label>
+                <input
+                  id="im-width"
+                  type="number"
+                  min="0"
+                  max="20000"
+                  step="1"
+                  x-model.number="forms.image.width"
+                  x-bind:aria-invalid="errors.convert.width ? 'true' : 'false'"
+                />
+                <span class="hint"
+                  x-text="imageOutputIsSVG ? 'Scales the picture. 0 keeps its width.' : '0 keeps the original width.'"></span>
+                <span class="field-error" x-show="errors.convert.width">
+                  <i data-lucide="alert-circle"></i>
+                  <span x-text="errors.convert.width"></span>
+                </span>
+              </div>
+
+              <div class="field" x-show="!svgInput" x-cloak>
+                <label class="label" for="im-height">Height</label>
+                <input
+                  id="im-height"
+                  type="number"
+                  min="0"
+                  max="20000"
+                  step="1"
+                  x-model.number="forms.image.height"
+                  x-bind:aria-invalid="errors.convert.height ? 'true' : 'false'"
+                />
+                <span class="hint"
+                  x-text="imageOutputIsSVG ? 'Scales the picture. 0 keeps its height.' : '0 keeps the original height.'"></span>
+                <span class="field-error" x-show="errors.convert.height">
+                  <i data-lucide="alert-circle"></i>
+                  <span x-text="errors.convert.height"></span>
+                </span>
+              </div>
+
+              <div class="field">
+                <label class="label" for="im-retention">Keep the file for</label>
+                <select id="im-retention" x-model="forms.image.retention_days">
+                  <template
+                    x-for="o in options('retention_choices')"
+                    :key="o.value"
+                  >
+                    <option x-bind:value="o.value" x-text="o.label"
+                      x-bind:selected="o.value === String(forms.image.retention_days)"></option>
+                  </template>
+                </select>
+              </div>
+
+              <div class="field field-wide">
+                <label class="check">
+                  <input type="checkbox" x-model="forms.image.strip_metadata" />
+                  Strip metadata (including camera and location data)
+                </label>
+              </div>
+            </div>
+
+            <p class="inline-error" x-show="formError.convert" x-cloak>
+              <i data-lucide="alert-circle"></i>
+              <span x-text="formError.convert"></span>
+            </p>
+          </div>
+
+          <div class="panel-foot">
+            <span class="hint" x-show="!uploadReady('convert')">
+              Add a video or an image - the options follow the file.
+            </span>
+            <button
+              type="submit"
+              class="btn btn-primary"
+              x-bind:disabled="!uploadReady('convert') || submitting === 'convert'"
+            >
+              <i data-lucide="play"></i>
+              <span
+                x-text="submitting === 'convert' ? 'Starting…' : (uploadKind('convert') === 'image' ? 'Convert image' : 'Start convert')"
+                >Start convert</span
+              >
+            </button>
+          </div>
+        </form>
+
+        <!-- compress -->
+        <form
+          class="panel"
+          x-show="jobType === 'compress'"
+          x-on:submit.prevent="submit('compress')"
+        >
+          <div class="panel-head"><span class="eyebrow">Source file</span></div>
+          <div class="panel-body">
+            <template x-if="!uploads.compress.length">
+              <label
+                class="dropzone"
+                x-bind:class="dragging.compress ? 'is-over' : ''"
+                x-on:dragover.prevent="dragging.compress = true"
+                x-on:dragleave.prevent="dragging.compress = false"
+                x-on:drop.prevent="onDrop($event, 'compress')"
+              >
+                <i data-lucide="upload"></i>
+                <strong>Drop a video or image here</strong>
+                <span class="hint">
+                  or click to browse - up to
+                  <span x-text="bytes(maxUploadBytes)"></span>
+                </span>
+                <input
+                  type="file"
+                  multiple
+                  x-on:change="onPick($event, 'compress')"
+                  aria-label="Choose a video or image to compress"
+                />
+              </label>
+            </template>
+
+            <template x-if="uploads.compress.length">
+              <div class="file-list">
+                <template x-for="u in uploads.compress" :key="u.uid">
+                  <div class="file-card">
+                    <span class="file-icon">
+                      <i x-bind:data-lucide="u.kind === 'image' ? 'file-image' : 'file-video'"></i>
+                    </span>
+                    <div class="file-body">
+                      <div class="file-name truncate" x-text="u.name"></div>
+                      <div class="mono muted">
+                        <span x-text="bytes(u.size)"></span>
+                        <span x-show="u.uploading" x-text="' · uploading ' + u.progress + '%'"></span>
+                        <span x-show="u.upload_id && !u.uploading"> · ready</span>
+                      </div>
+                      <div class="bar" x-show="u.uploading">
+                        <span x-bind:style="'width:' + u.progress + '%'"></span>
+                      </div>
+                      <p class="inline-error" x-show="u.error">
+                        <i data-lucide="alert-circle"></i>
+                        <span x-text="u.error"></span>
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      class="btn btn-quiet btn-icon"
+                      x-on:click="removeUpload('compress', u.uid)"
+                      x-bind:aria-label="'Remove ' + u.name"
+                    >
+                      <i data-lucide="x"></i>
+                    </button>
+                  </div>
+                </template>
+
+                <div class="file-list-foot">
+                  <label class="btn btn-sm file-add">
+                    <i data-lucide="plus"></i>
+                    <span x-text="uploadKind('compress') === 'image' ? 'Add more images' : 'Add more videos'"
+                      >Add more</span>
+                    <input type="file" multiple x-on:change="onPick($event, 'compress')" />
+                  </label>
+                  <span class="hint" x-text="uploads.compress.length + ' file' + (uploads.compress.length === 1 ? '' : 's')"></span>
+                  <button type="button" class="btn btn-sm btn-quiet" x-on:click="clearUploads('compress')">
+                    Remove all
+                  </button>
+                </div>
+              </div>
+            </template>
+
+            <div class="field-grid" style="margin-top: 16px" x-show="uploadKind('compress')" x-cloak>
+              <div class="field field-wide">
+                <label class="label" for="cp-target">How hard to squeeze</label>
+                <select
+                  id="cp-target"
+                  x-model="forms.compress.target"
+                  x-on:change="onTargetChange()"
+                  x-bind:aria-invalid="errors.compress.target ? 'true' : 'false'"
+                >
+                  <template
+                    x-for="o in compressTargetOptions()"
+                    :key="o.value"
+                  >
+                    <option x-bind:value="o.value" x-text="o.label"
+                      x-bind:selected="o.value === String(forms.compress.target)"></option>
+                  </template>
+                </select>
+                <span class="hint" x-show="!compressBySize && uploadKind('compress') === 'video'">
+                  <template x-if="compressResolvedCRF() !== null">
+                    <span>
+                      Encodes at quality
+                      <span class="mono" x-text="compressResolvedCRF()"></span>
+                      for
+                      <span class="mono" x-text="forms.compress.video_codec"></span>
+                      - lower is better. Changing the codec changes this number.
+                    </span>
+                  </template>
+                  <template x-if="compressResolvedCRF() === null">
+                    <span>The server picks the matching quality for the codec.</span>
+                  </template>
+                  <span>It also sets the highlighted fields below.</span>
+                </span>
+                <span class="hint" x-show="uploadKind('compress') === 'image'" x-cloak>
+                  Re-encodes the picture at quality
+                  <span class="mono" x-text="imageCompressQuality()"></span>,
+                  keeping its current format and dimensions.
+                </span>
+                <span class="field-error" x-show="errors.compress.target">
+                  <i data-lucide="alert-circle"></i>
+                  <span x-text="errors.compress.target"></span>
+                </span>
+              </div>
+            </div>
+
+            <div
+              class="field-grid"
+              style="margin-top: 16px"
+              x-show="uploadKind('compress') === 'video'"
+              x-cloak
+            >
+              <div class="field field-wide" x-show="compressBySize" x-cloak>
+                <label class="label" for="cp-target-size">
+                  Target size in megabytes
+                </label>
+                <input
+                  id="cp-target-size"
+                  type="number"
+                  step="1"
+                  x-bind:min="targetSizeBounds().min"
+                  x-bind:max="targetSizeBounds().max"
+                  x-model.number="forms.compress.target_size_mb"
+                  x-bind:aria-invalid="errors.compress.target_size_mb ? 'true' : 'false'"
+                />
+                <span class="hint">
+                  Two encoding passes budget the bitrate to land under this,
+                  so it takes about twice as long. Audio comes out of the same
+                  budget - a target too small for the length is refused rather
+                  than guessed at.
+                </span>
+                <span class="field-error" x-show="errors.compress.target_size_mb">
+                  <i data-lucide="alert-circle"></i>
+                  <span x-text="errors.compress.target_size_mb"></span>
+                </span>
+              </div>
+
+              <div class="field">
+                <label class="label" for="cp-container">Container</label>
+                <select
+                  id="cp-container"
+                  x-model="forms.compress.container"
+                  x-bind:aria-invalid="errors.compress.container ? 'true' : 'false'"
+                >
+                  <template
+                    x-for="o in options('video_containers')"
+                    :key="o.value"
+                  >
+                    <option x-bind:value="o.value" x-text="o.label"
+                      x-bind:selected="o.value === String(forms.compress.container)"></option>
+                  </template>
+                </select>
+                <span class="field-error" x-show="errors.compress.container">
+                  <i data-lucide="alert-circle"></i>
+                  <span x-text="errors.compress.container"></span>
+                </span>
+              </div>
+
+              <div class="field">
+                <label class="label" for="cp-vcodec">Video codec</label>
+                <select
+                  id="cp-vcodec"
+                  x-model="forms.compress.video_codec"
+                  x-bind:aria-invalid="errors.compress.video_codec ? 'true' : 'false'"
+                >
+                  <template
+                    x-for="o in options('video_codecs')"
+                    :key="o.value"
+                  >
+                    <option x-bind:value="o.value" x-text="o.label"
+                      x-bind:selected="o.value === String(forms.compress.video_codec)"></option>
+                  </template>
+                </select>
+                <span class="field-error" x-show="errors.compress.video_codec">
+                  <i data-lucide="alert-circle"></i>
+                  <span x-text="errors.compress.video_codec"></span>
+                </span>
+              </div>
+
+              <div class="field">
+                <label class="label" for="cp-speed">Encoding effort</label>
+                <select id="cp-speed" x-model="forms.compress.speed"
+                  x-bind:class="flashClass('compress', 'speed')">
+                  <template
+                    x-for="o in options('encode_speeds')"
+                    :key="o.value"
+                  >
+                    <option x-bind:value="o.value" x-text="o.label"
+                      x-bind:selected="o.value === String(forms.compress.speed)"></option>
+                  </template>
+                </select>
+                <span class="hint">Slower = smaller file, same quality.</span>
+              </div>
+
+              <div class="field">
+                <label class="label" for="cp-res">Resolution</label>
+                <select id="cp-res" x-model="forms.compress.resolution"
+                  x-bind:class="flashClass('compress', 'resolution')">
+                  <template
+                    x-for="o in options('resolutions')"
+                    :key="o.value"
+                  >
+                    <option x-bind:value="o.value" x-text="o.label"
+                      x-bind:selected="o.value === String(forms.compress.resolution)"></option>
+                  </template>
+                </select>
+              </div>
+
+              <div class="field">
+                <label class="label" for="cp-abitrate">Audio bitrate</label>
+                <select id="cp-abitrate" x-model="forms.compress.audio_bitrate"
+                  x-bind:class="flashClass('compress', 'audio_bitrate')">
+                  <template
+                    x-for="o in options('audio_bitrates')"
+                    :key="o.value"
+                  >
+                    <option x-bind:value="o.value" x-text="o.label"
+                      x-bind:selected="o.value === String(forms.compress.audio_bitrate)"></option>
+                  </template>
+                </select>
+                <span class="field-error" x-show="errors.compress.audio_bitrate">
+                  <i data-lucide="alert-circle"></i>
+                  <span x-text="errors.compress.audio_bitrate"></span>
+                </span>
+              </div>
+
+              <div class="field">
+                <label class="label" for="cp-retention">Keep the file for</label>
+                <select id="cp-retention" x-model="forms.compress.retention_days">
+                  <template
+                    x-for="o in options('retention_choices')"
+                    :key="o.value"
+                  >
+                    <option x-bind:value="o.value" x-text="o.label"
+                      x-bind:selected="o.value === String(forms.compress.retention_days)"></option>
+                  </template>
+                </select>
+              </div>
+
+              <div class="field field-wide">
+                <label class="check">
+                  <input type="checkbox" x-model="forms.compress.strip_metadata" />
+                  Strip metadata from the output
+                </label>
+              </div>
+            </div>
+
+            <div
+              class="field-grid"
+              style="margin-top: 16px"
+              x-show="uploadKind('compress') === 'image'"
+              x-cloak
+            >
+              <div class="field">
+                <label class="label" for="cp-im-retention">Keep the file for</label>
+                <select id="cp-im-retention" x-model="forms.compress.retention_days">
+                  <template x-for="o in options('retention_choices')" :key="o.value">
+                    <option x-bind:value="o.value" x-text="o.label"
+                      x-bind:selected="o.value === String(forms.compress.retention_days)"></option>
+                  </template>
+                </select>
+              </div>
+
+              <div class="field field-wide">
+                <label class="check">
+                  <input type="checkbox" x-model="forms.compress.strip_metadata" />
+                  Strip metadata (including camera and location data)
+                </label>
+              </div>
+            </div>
+
+            <p class="inline-error" x-show="formError.compress" x-cloak>
+              <i data-lucide="alert-circle"></i>
+              <span x-text="formError.compress"></span>
+            </p>
+          </div>
+
+          <div class="panel-foot">
+            <span class="hint" x-show="!uploadReady('compress')">
+              Add a video or an image - the options follow the file.
+            </span>
+            <button
+              type="submit"
+              class="btn btn-primary"
+              x-bind:disabled="!uploadReady('compress') || submitting === 'compress'"
+            >
+              <i data-lucide="play"></i>
+              <span
+                x-text="submitting === 'compress' ? 'Starting…' : (uploadKind('compress') === 'image' ? 'Compress image' : 'Start compress')"
+                >Start compress</span
+              >
+            </button>
+          </div>
+        </form>
+
+      </section>
+
+      <!-- jobs -->
+      <section x-show="tab === 'jobs'" x-cloak>
+        <div class="page-head">
+          <div>
+            <h1>Jobs</h1>
+            <p class="sub">Newest first. Progress updates live.</p>
+          </div>
+          <div class="btn-row">
+            <label class="sr-only" for="job-filter">Filter by status</label>
+            <select id="job-filter" x-model="jobFilter" x-on:change="jobPage = 1" style="width: auto">
+              <template x-for="s in statusFilters" :key="s.value">
+                <option x-bind:value="s.value" x-text="s.label"
+                      x-bind:selected="s.value === String(jobFilter)"></option>
+              </template>
+            </select>
+            <button type="button" class="btn" x-on:click="loadJobs()">
+              <span class="btn-ico" x-bind:class="jobsLoading ? 'spin' : ''">
+                <i data-lucide="refresh-cw"></i>
+              </span>
+              Refresh
+            </button>
+          </div>
+        </div>
+
+        <div class="pickbar" x-show="pickedJobs.length" x-cloak x-transition>
+          <label class="pick">
+            <input
+              type="checkbox"
+              x-bind:checked="pageAllPicked"
+              x-on:change="togglePage()"
+            />
+            <span x-text="pickedJobs.length + ' selected'"></span>
+          </label>
+          <div class="btn-row">
+            <button
+              type="button"
+              class="btn btn-sm"
+              x-show="pickedActive"
+              x-bind:disabled="bulkBusy"
+              x-on:click="cancelPicked()"
+            >
+              <i data-lucide="x"></i> Cancel
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm btn-danger"
+              x-bind:disabled="bulkBusy"
+              x-on:click="deletePicked()"
+            >
+              <i data-lucide="trash-2"></i> Delete
+            </button>
+            <button type="button" class="btn btn-sm btn-quiet" x-on:click="clearPicked()">
+              Clear
+            </button>
+          </div>
+        </div>
+
+        <p class="sr-only" aria-live="polite" x-text="announce"></p>
+
+        <!-- Separate from the offline banner, which claims the server is
+             unreachable: a failed delete or cancel says so here instead. -->
+        <div class="banner banner-error" x-show="jobsError" x-cloak x-transition>
+          <i data-lucide="alert-circle"></i>
+          <div class="banner-body"><span x-text="jobsError"></span></div>
+          <button type="button" class="btn btn-sm" x-on:click="jobsError = ''">
+            Dismiss
+          </button>
+        </div>
+
+        <div class="job-list">
+          <div class="empty" x-show="!visibleJobs.length">
+            <i data-lucide="inbox"></i>
+            <strong x-text="jobs.length ? 'No jobs match that status' : 'No jobs yet'"></strong>
+            <span x-show="!jobs.length">
+              Start one from the New job tab and it will appear here.
+            </span>
+            <button
+              type="button"
+              class="btn btn-sm"
+              x-show="!jobs.length"
+              x-on:click="go('new')"
+            >
+              <i data-lucide="plus"></i> New job
+            </button>
+          </div>
+
+          <template x-for="job in pagedJobs" :key="job.id">
+            <article class="job" x-bind:data-status="job.status">
+              <label class="pick job-pick">
+                <input
+                  type="checkbox"
+                  x-bind:checked="!!picked[job.id]"
+                  x-on:change="togglePick(job.id)"
+                  x-bind:aria-label="'Select ' + (job.title || job.id)"
+                />
+              </label>
+              <span class="job-type" x-bind:title="typeLabel(job.type)">
+                <i x-bind:data-lucide="typeIcon(job.type)"></i>
+              </span>
+
+              <div class="job-main">
+                <div class="job-title truncate" x-text="job.title || job.source || job.id"></div>
+                <!-- Two ranked groups: what state it is in, then what it made.
+                     Stacked on a phone, side by side once there is room. -->
+                <div class="job-sub">
+                  <span class="badge" x-bind:data-status="job.status" x-text="job.status"></span>
+                  <span x-text="typeLabel(job.type)"></span>
+                  <span class="sep">/</span>
+                  <span x-bind:title="absolute(job.created_at)" x-text="ago(job.created_at)"></span>
+                  <span class="sep" x-show="jobStage(job) && job.status === 'running'">·</span>
+                  <span x-show="jobStage(job) && job.status === 'running'" x-text="jobStage(job)"></span>
+                </div>
+                <div class="job-out" x-show="job.output_name || job.expires_at">
+                  <span class="truncate" x-show="job.output_name" x-text="job.output_name"></span>
+                  <span class="sep" x-show="job.output_name && job.output_size">·</span>
+                  <span x-show="job.output_size" x-text="bytes(job.output_size)"></span>
+                  <span class="sep" x-show="job.expires_at && (job.output_name || job.output_size)">·</span>
+                  <span x-show="job.expires_at" x-bind:title="absolute(job.expires_at)" x-text="retentionLabel(job)"></span>
+                </div>
+                <p class="job-error" x-show="job.status === 'failed' && job.error">
+                  <i data-lucide="alert-triangle"></i>
+                  <span x-text="job.error"></span>
+                </p>
+              </div>
+
+              <div class="telemetry" x-show="job.status === 'running'">
+                <span class="pct" x-text="percentLabel(job)"></span>
+                <span class="aux">
+                  <span x-show="jobSpeed(job)" x-text="jobSpeed(job)"></span>
+                  <span x-show="jobSpeed(job) && jobEta(job)"> · </span>
+                  <span x-show="jobEta(job)" x-text="'ETA ' + jobEta(job)"></span>
+                </span>
+              </div>
+
+              <div class="job-actions">
+                <a
+                  class="btn btn-sm"
+                  x-show="job.status === 'done'"
+                  x-bind:href="downloadUrl(job)"
+                  x-bind:download="job.output_name || ''"
+                >
+                  <i data-lucide="download"></i>
+                  <span class="btn-label">Download</span>
+                </a>
+                <button
+                  type="button"
+                  class="btn btn-sm"
+                  x-show="job.status === 'running' || job.status === 'queued'"
+                  x-on:click="cancelJob(job)"
+                >
+                  <i data-lucide="x"></i>
+                  <span class="btn-label">Cancel</span>
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-sm btn-quiet btn-icon btn-danger"
+                  x-on:click="deleteJob(job)"
+                  x-bind:aria-label="'Delete ' + (job.title || job.id)"
+                >
+                  <i data-lucide="trash-2"></i>
+                </button>
+              </div>
+
+              <div
+                class="job-rail"
+                x-bind:class="isIndeterminate(job) ? 'is-indeterminate' : ''"
+                role="progressbar"
+                x-bind:aria-valuenow="job.status === 'running' && jobProgress(job) >= 0 ? Math.round(jobProgress(job)) : null"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                x-bind:aria-label="'Progress for ' + (job.title || job.id)"
+              >
+                <span x-bind:style="railWidth(job) ? 'width:' + railWidth(job) : ''"></span>
+              </div>
+            </article>
+          </template>
+        </div>
+
+        <div class="pager" x-show="jobPages > 1" x-cloak>
+          <button
+            type="button"
+            class="btn btn-sm"
+            x-bind:disabled="jobPage <= 1"
+            x-on:click="goToJobPage(jobPage - 1)"
+          >
+            <i data-lucide="chevron-left"></i> Newer
+          </button>
+          <span class="pager-count num" x-text="jobRange"></span>
+          <button
+            type="button"
+            class="btn btn-sm"
+            x-bind:disabled="jobPage >= jobPages"
+            x-on:click="goToJobPage(jobPage + 1)"
+          >
+            Older <i data-lucide="chevron-right"></i>
+          </button>
+        </div>
+      </section>
+
+      <!-- settings -->
+      <section x-show="tab === 'settings'" x-cloak>
+        <div class="page-head">
+          <div>
+            <h1>Settings</h1>
+            <p class="sub">Appearance, and what this server is configured to do.</p>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><span class="eyebrow">Appearance</span></div>
+          <div class="panel-body">
+            <span class="label" id="theme-label">Theme</span>
+            <div
+              class="segbar compact"
+              style="margin-top: 6px; margin-bottom: 0"
+              role="group"
+              aria-labelledby="theme-label"
+            >
+              <button
+                type="button"
+                class="seg"
+                x-bind:aria-pressed="theme === 'system'"
+                x-on:click="setTheme('system')"
+              >
+                <i data-lucide="monitor"></i> System
+              </button>
+              <button
+                type="button"
+                class="seg"
+                x-bind:aria-pressed="theme === 'light'"
+                x-on:click="setTheme('light')"
+              >
+                <i data-lucide="sun"></i> Light
+              </button>
+              <button
+                type="button"
+                class="seg"
+                x-bind:aria-pressed="theme === 'dark'"
+                x-on:click="setTheme('dark')"
+              >
+                <i data-lucide="moon"></i> Dark
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <span class="eyebrow">Server</span>
+            <span class="hint">Read-only - set on the server, not here.</span>
+          </div>
+          <div class="panel-body">
+            <table class="spec">
+              <tbody>
+                <tr>
+                  <th scope="row">Status</th>
+                  <td x-text="health.status || 'unknown'"></td>
+                </tr>
+                <tr>
+                  <th scope="row">Sign-in required</th>
+                  <td x-text="health.auth_required ? 'yes' : 'no'"></td>
+                </tr>
+                <tr x-show="me.authenticated">
+                  <th scope="row">Signed in as</th>
+                  <td x-text="me.username || '-'"></td>
+                </tr>
+                <tr>
+                  <th scope="row">Default retention</th>
+                  <td
+                    x-text="presets && Number(presets.default_retention_days) === 0 ? 'forever' : (presets ? presets.default_retention_days + ' days' : '-')"
+                  ></td>
+                </tr>
+                <tr>
+                  <th scope="row">Maximum upload size</th>
+                  <td x-text="bytes(maxUploadBytes)"></td>
+                </tr>
+                <tr>
+                  <th scope="row">Live updates</th>
+                  <td x-text="linked ? 'connected' : linkLabel"></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel" x-show="health.auth_required">
+          <div class="panel-head"><span class="eyebrow">Session</span></div>
+          <div class="panel-body">
+            <button type="button" class="btn" x-on:click="logout()">
+              <i data-lucide="log-out"></i> Log out
+            </button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- queue - work started from this tab is watched here rather than by
+         throwing the user onto the Jobs list. Docked, not modal. -->
+    <div class="queue" x-show="queue.length" x-cloak x-transition.opacity>
+      <button
+        type="button"
+        class="queue-pill"
+        x-show="!queueOpen"
+        x-on:click="toggleQueue()"
+        x-bind:aria-label="'Show processing queue, ' + queueRunning + ' active'"
+      >
+        <span class="queue-ring" x-bind:style="'--pct:' + queuePercent">
+          <i data-lucide="arrow-down"></i>
+        </span>
+        <span class="num" x-text="queuePercent + '%'"></span>
+      </button>
+
+      <div class="queue-card" x-show="queueOpen" role="region" aria-label="Processing queue">
+        <div class="queue-head">
+          <span class="eyebrow">Processing queue</span>
+          <span class="queue-count num" x-show="queueRunning" x-text="queueRunning"></span>
+          <button type="button" class="queue-link" x-on:click="clearQueue()">
+            <i data-lucide="x"></i> clear
+          </button>
+          <button
+            type="button"
+            class="btn btn-quiet btn-icon"
+            x-on:click="toggleQueue()"
+            aria-label="Collapse queue"
+          >
+            <i data-lucide="chevron-down"></i>
+          </button>
+        </div>
+
+        <div class="queue-body">
+          <template x-for="job in queueJobs" :key="job.id">
+            <div class="queue-item" x-bind:data-status="job.status">
+              <span class="queue-icon"><i x-bind:data-lucide="typeIcon(job.type)"></i></span>
+              <div class="queue-main">
+                <div class="queue-title truncate"
+                  x-text="job.title || job.output_name || job.source || job.id"></div>
+                <div
+                  class="bar"
+                  x-show="!jobSettled(job)"
+                  x-bind:class="isIndeterminate(job) ? 'is-indeterminate' : ''"
+                >
+                  <span x-bind:style="railWidth(job) ? 'width:' + railWidth(job) : ''"></span>
+                </div>
+                <div class="queue-status">
+                  <span class="badge" x-bind:data-status="job.status" x-text="job.status"></span>
+                  <span class="truncate" x-text="queueStatusLine(job)"></span>
+                </div>
+              </div>
+              <div class="queue-actions">
+                <a
+                  class="btn btn-sm btn-quiet btn-icon"
+                  x-show="job.status === 'done'"
+                  x-bind:href="downloadUrl(job)"
+                  x-bind:download="job.output_name || ''"
+                  x-bind:aria-label="'Download ' + (job.output_name || job.id)"
+                >
+                  <i data-lucide="download"></i>
+                </a>
+                <button
+                  type="button"
+                  class="btn btn-sm btn-quiet btn-icon"
+                  x-show="!jobSettled(job)"
+                  x-on:click="cancelJob(job)"
+                  aria-label="Cancel"
+                >
+                  <i data-lucide="x"></i>
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-sm btn-quiet btn-icon"
+                  x-show="jobSettled(job)"
+                  x-on:click="dismissFromQueue(job.id)"
+                  aria-label="Dismiss"
+                >
+                  <i data-lucide="check"></i>
+                </button>
+              </div>
+            </div>
+          </template>
+        </div>
+
+      </div>
+    </div>
+  </body>
+</html>

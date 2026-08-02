@@ -1,0 +1,172 @@
+#!/bin/sh
+# s6-overlay oneshot: everything that has to happen as root before the
+# `aiofiles` and `nginx` longruns are started as the unprivileged app user.
+#
+# Invoked via `with-contenv`, so the container's environment is visible here.
+# Any non-zero exit aborts the boot, because the image sets
+# S6_BEHAVIOUR_IF_STAGE2_FAILS=2.
+set -eu
+
+log() { echo "init-aiofiles: $*" >&2; }
+
+PUID="${PUID:-1000}"
+PGID="${PGID:-1000}"
+DATA_DIR="${DATA_DIR:-/data}"
+MAX_UPLOAD_MIB="${MAX_UPLOAD_MIB:-4096}"
+
+# The nginx config is rendered from these, and the Go process reads the same
+# two variables, so a change here moves both ends at once. An XACCEL_PREFIX
+# that is set but empty means "let Go stream the file"; nginx keeps the default
+# location in that case, unused but valid.
+DOWNLOAD_DIR="${DOWNLOAD_DIR:-$DATA_DIR/downloads}"
+XACCEL_PREFIX="${XACCEL_PREFIX:-/_protected}"
+
+CONTENV=/run/s6/container_environment
+
+# ---------------------------------------------------------------------------
+# 1. App user and group
+#
+# busybox has no usermod/groupmod, so instead of mutating a baked-in account
+# we resolve whatever already owns PUID/PGID and only create an account when
+# the id is genuinely unused. This keeps `s6-setuidgid` working for any PUID,
+# including 0. /etc/{passwd,group} are parsed directly rather than via getent
+# so this does not depend on which busybox applets Alpine happened to enable.
+# ---------------------------------------------------------------------------
+name_for_id()   { awk -F: -v id="$2" '$3 == id { print $1; exit }' "$1"; }
+name_is_taken() { awk -F: -v n="$2" '$1 == n { f = 1 } END { exit !f }' "$1"; }
+
+APP_GROUP="$(name_for_id /etc/group "$PGID")"
+if [ -z "$APP_GROUP" ]; then
+    APP_GROUP=aiofiles
+    if name_is_taken /etc/group "$APP_GROUP"; then
+        APP_GROUP="app${PGID}"
+    fi
+    addgroup -g "$PGID" "$APP_GROUP"
+fi
+
+APP_USER="$(name_for_id /etc/passwd "$PUID")"
+if [ -z "$APP_USER" ]; then
+    APP_USER=aiofiles
+    if name_is_taken /etc/passwd "$APP_USER"; then
+        APP_USER="app${PUID}"
+    fi
+    adduser -D -H -u "$PUID" -G "$APP_GROUP" -s /sbin/nologin "$APP_USER"
+fi
+
+log "services will run as ${APP_USER}:${APP_GROUP} (${PUID}:${PGID})"
+
+# Publish the resolved name so the longrun `run` scripts can s6-setuidgid it.
+printf '%s' "$APP_USER" > "$CONTENV/APP_USER"
+
+# ---------------------------------------------------------------------------
+# 2. Data directories
+#
+# The chown is deliberately NOT recursive: on a large downloads volume that
+# would walk every file on every boot. Set FIX_OWNERSHIP=1 once after changing
+# PUID/PGID to repair pre-existing files.
+# ---------------------------------------------------------------------------
+mkdir -p "$DATA_DIR/downloads" "$DATA_DIR/tmp" "$DATA_DIR/uploads" "$DATA_DIR/db"
+chown "$PUID:$PGID" \
+    "$DATA_DIR" \
+    "$DATA_DIR/downloads" "$DATA_DIR/tmp" "$DATA_DIR/uploads" "$DATA_DIR/db"
+chmod 0750 \
+    "$DATA_DIR/downloads" "$DATA_DIR/tmp" "$DATA_DIR/uploads" "$DATA_DIR/db"
+
+if [ "${FIX_OWNERSHIP:-0}" = "1" ]; then
+    log "FIX_OWNERSHIP=1: recursively chowning ${DATA_DIR} (this can take a while)"
+    chown -R "$PUID:$PGID" "$DATA_DIR"
+fi
+
+# ---------------------------------------------------------------------------
+# 3. nginx configuration
+#
+# Render the template first, then let `nginx -t` create and validate the temp
+# path directories, then chown them - if we chowned first, the config test
+# (running as root) would recreate them root-owned.
+#
+# The three values are validated before substitution: they are pasted into a
+# sed replacement and then into a config file, so anything outside a plain path
+# alphabet is refused here rather than turned into a confusing nginx error.
+# ---------------------------------------------------------------------------
+case "$MAX_UPLOAD_MIB" in
+    ''|*[!0-9]*)
+        log "FATAL: MAX_UPLOAD_MIB must be a whole number of MiB (got '${MAX_UPLOAD_MIB}')"
+        exit 1
+        ;;
+esac
+
+# 0 is how nginx spells "no limit", and it is what the Go handler does at 0 as
+# well. Any other value gets 64 MiB of headroom so the app's JSON 413 wins over
+# nginx's HTML one.
+if [ "$MAX_UPLOAD_MIB" -eq 0 ]; then
+    NGINX_CLIENT_MAX_BODY=0
+else
+    NGINX_CLIENT_MAX_BODY="$(( MAX_UPLOAD_MIB + 64 ))m"
+fi
+
+check_path() {
+    case "$2" in
+        /*) ;;
+        *)  log "FATAL: $1 must be an absolute path (got '$2')"; exit 1 ;;
+    esac
+    case "$2" in
+        *[!A-Za-z0-9._/-]*)
+            log "FATAL: $1 may only contain letters, digits and . _ - / (got '$2')"
+            exit 1
+            ;;
+    esac
+}
+check_path DOWNLOAD_DIR "$DOWNLOAD_DIR"
+check_path XACCEL_PREFIX "$XACCEL_PREFIX"
+
+# The template writes the trailing slash itself, on both the location and the
+# alias; nginx needs them to match.
+NGINX_XACCEL_PREFIX="${XACCEL_PREFIX%/}"
+NGINX_DOWNLOAD_DIR="${DOWNLOAD_DIR%/}"
+
+sed -e "s|__CLIENT_MAX_BODY__|${NGINX_CLIENT_MAX_BODY}|g" \
+    -e "s|__XACCEL_PREFIX__|${NGINX_XACCEL_PREFIX}|g" \
+    -e "s|__DOWNLOAD_DIR__|${NGINX_DOWNLOAD_DIR}|g" \
+    /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
+
+mkdir -p /run/nginx /var/log/nginx /var/lib/nginx
+
+if ! /usr/sbin/nginx -t -c /etc/nginx/nginx.conf; then
+    log "FATAL: generated /etc/nginx/nginx.conf does not parse"
+    exit 1
+fi
+
+chown -R "$PUID:$PGID" /run/nginx /var/log/nginx /var/lib/nginx
+log "nginx client_max_body_size = ${NGINX_CLIENT_MAX_BODY} (MAX_UPLOAD_MIB=${MAX_UPLOAD_MIB})"
+log "nginx X-Accel location = ${NGINX_XACCEL_PREFIX}/ -> ${NGINX_DOWNLOAD_DIR}/"
+
+# ---------------------------------------------------------------------------
+# 4. Authentication
+#
+# AUTH_PASSWORD_HASH is the supported production input. AUTH_PASSWORD is a
+# convenience for compose users: hash it here and export the result, so the
+# plaintext never reaches the app's own configuration. It is still visible via
+# `docker inspect`, which the README calls out.
+# ---------------------------------------------------------------------------
+if [ -z "${AUTH_USERNAME:-}" ]; then
+    log "WARNING: AUTH_USERNAME is not set - the UI and API are UNAUTHENTICATED."
+    log "WARNING: do not publish this container beyond localhost or a trusted LAN."
+elif [ -z "${AUTH_PASSWORD_HASH:-}" ]; then
+    if [ -z "${AUTH_PASSWORD:-}" ]; then
+        log "FATAL: AUTH_USERNAME is set but neither AUTH_PASSWORD_HASH nor AUTH_PASSWORD is."
+        exit 1
+    fi
+    if ! hash="$(/usr/local/bin/aiofiles -hash-password "$AUTH_PASSWORD")"; then
+        log "FATAL: could not derive an argon2id hash from AUTH_PASSWORD"
+        exit 1
+    fi
+    # No trailing newline: s6-envdir would otherwise hand the app a hash with
+    # a stray byte on the end.
+    printf '%s' "$hash" > "$CONTENV/AUTH_PASSWORD_HASH"
+    log "derived AUTH_PASSWORD_HASH from AUTH_PASSWORD (prefer setting the hash directly)"
+fi
+
+# Keep the plaintext out of the service environment even when it was used.
+rm -f "$CONTENV/AUTH_PASSWORD"
+
+log "init complete"
