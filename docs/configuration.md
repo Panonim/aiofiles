@@ -33,7 +33,7 @@ Read by the Go process (`internal/config/config.go`):
 | `ALLOWED_HOSTS` | *(empty)* | Comma-separated names the instance answers to; empty means any. `*.example.com` matches subdomains at any depth, `*` means any. An entry with a scheme, port or path fails startup. |
 | `PROXY_ONLY` | `0` | `1` refuses any request whose `Host` is a bare IP address, or that did not arrive through a trusted proxy. |
 | `LOG_LEVEL` | `warn` | `debug`, `info`, `warn`/`warning` or `error`. Anything else fails startup. |
-| `LISTEN_ADDR` | `127.0.0.1:1144` | Where the Go server binds *inside* the container. |
+| `LISTEN_ADDR` | `127.0.0.1:1144` | Where the Go server binds *inside* the container. nginx's `/api/*` locations proxy to the same address, so changing this moves both ends together — change the port to dodge a clash, but keep the host at `127.0.0.1` unless you know why you're changing it. |
 | `DATA_DIR` | `/data` | Root of every other path below. |
 | `DB_PATH` | `$DATA_DIR/db/aiofiles.db` | SQLite file. |
 | `DOWNLOAD_DIR` | `$DATA_DIR/downloads` | Finished job output. Also becomes the `alias` of the X-Accel location in nginx. |
@@ -47,7 +47,8 @@ Read by the Go process (`internal/config/config.go`):
 
 `TRUSTED_PROXIES`, `ALLOWED_HOSTS` and `PROXY_ONLY` are read by the init script
 as well, which renders the same host rules into nginx so they cover the frontend
-and not only the API.
+and not only the API. `LISTEN_ADDR` is too, so nginx's `proxy_pass` target
+always matches where Go actually bound.
 
 Read by the container's init script or the image itself, never by the Go process:
 
