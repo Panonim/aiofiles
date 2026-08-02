@@ -379,27 +379,30 @@ func TestSessionsSurviveAcrossManagers(t *testing.T) {
 	}
 }
 
+// The chain-walking itself is covered in internal/proxy; what matters here is
+// that the Manager keys its rate limiter on the client rather than on the proxy
+// in front of it.
 func TestClientIP(t *testing.T) {
+	m := NewManager(cheapConfig(t))
 	tests := []struct {
 		name       string
 		remoteAddr string
 		headers    map[string]string
 		want       string
 	}{
-		{"remote address", "192.0.2.5:4321", nil, "192.0.2.5"},
-		{"forwarded for", "10.0.0.1:1", map[string]string{"X-Forwarded-For": "203.0.113.7"}, "203.0.113.7"},
-		// nginx appends the peer, so the tail is the only element it wrote.
-		{"spoofed leading element is ignored", "10.0.0.1:1",
+		{"direct client", "192.0.2.5:4321", nil, "192.0.2.5"},
+		// The bundled nginx is on loopback and appends the peer it saw.
+		{"behind the bundled nginx", "127.0.0.1:1",
+			map[string]string{"X-Forwarded-For": "203.0.113.7"}, "203.0.113.7"},
+		{"spoofed leading element is ignored", "127.0.0.1:1",
 			map[string]string{"X-Forwarded-For": "1.2.3.4, 203.0.113.7"}, "203.0.113.7"},
-		{"long spoofed chain is ignored", "10.0.0.1:1",
-			map[string]string{"X-Forwarded-For": "1.2.3.4, 5.6.7.8,9.10.11.12 , 203.0.113.7"}, "203.0.113.7"},
-		{"real ip", "10.0.0.1:1", map[string]string{"X-Real-IP": " 203.0.113.9 "}, "203.0.113.9"},
-		{"forwarded for wins", "10.0.0.1:1",
+		{"headers from an untrusted peer are ignored", "192.0.2.5:4321",
+			map[string]string{"X-Forwarded-For": "203.0.113.7", "X-Real-IP": "203.0.113.9"}, "192.0.2.5"},
+		{"real ip", "127.0.0.1:1", map[string]string{"X-Real-IP": " 203.0.113.9 "}, "203.0.113.9"},
+		{"forwarded for wins", "127.0.0.1:1",
 			map[string]string{"X-Forwarded-For": "1.2.3.4, 198.51.100.1", "X-Real-IP": "203.0.113.9"}, "198.51.100.1"},
-		{"blank forwarded for falls back", "10.0.0.1:1",
+		{"blank forwarded for falls back", "127.0.0.1:1",
 			map[string]string{"X-Forwarded-For": "  ", "X-Real-IP": "203.0.113.9"}, "203.0.113.9"},
-		{"trailing separator falls back", "192.0.2.5:4321",
-			map[string]string{"X-Forwarded-For": "1.2.3.4,"}, "192.0.2.5"},
 		{"unparseable remote address", "not-an-address", nil, "not-an-address"},
 	}
 	for _, tc := range tests {
@@ -409,22 +412,10 @@ func TestClientIP(t *testing.T) {
 			for k, v := range tc.headers {
 				r.Header.Set(k, v)
 			}
-			if got := ClientIP(r); got != tc.want {
+			if got := m.ClientIP(r); got != tc.want {
 				t.Errorf("ClientIP = %q, want %q", got, tc.want)
 			}
 		})
-	}
-}
-
-// Splitting the spoof across repeated headers must not hide the appended peer
-// either: the last element of the last header is the one nginx wrote.
-func TestClientIPRepeatedForwardedForHeaders(t *testing.T) {
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	r.RemoteAddr = "10.0.0.1:1"
-	r.Header.Add("X-Forwarded-For", "1.2.3.4")
-	r.Header.Add("X-Forwarded-For", "5.6.7.8, 203.0.113.7")
-	if got := ClientIP(r); got != "203.0.113.7" {
-		t.Errorf("ClientIP = %q, want %q", got, "203.0.113.7")
 	}
 }
 

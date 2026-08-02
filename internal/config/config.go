@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -30,6 +31,12 @@ type Config struct {
 	AuthUsername     string
 	AuthPasswordHash string // argon2id encoded hash; empty means auth disabled
 	SessionTTLHours  int
+
+	// Reverse proxy. Loopback is always trusted on top of TrustedProxies,
+	// because the bundled nginx is one; see internal/proxy.
+	TrustedProxies []netip.Prefix // whose X-Forwarded-* headers are believed
+	AllowedHosts   []string       // names the instance answers to; empty means any
+	ProxyOnly      bool           // refuse requests that did not come through a proxy
 
 	XAccelPrefix string // internal nginx location; empty streams through Go instead
 
@@ -61,6 +68,7 @@ func Load() (*Config, error) {
 		AuthUsername:         env("AUTH_USERNAME", ""),
 		AuthPasswordHash:     env("AUTH_PASSWORD_HASH", ""),
 		SessionTTLHours:      envInt("SESSION_TTL_HOURS", 720),
+		ProxyOnly:            envBool("PROXY_ONLY", false),
 		YtDlpBin:             env("YTDLP_BIN", "yt-dlp"),
 		FFmpegBin:            env("FFMPEG_BIN", "ffmpeg"),
 		FFprobeBin:           env("FFPROBE_BIN", "ffprobe"),
@@ -86,6 +94,13 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	c.LogLevel = lvl
+
+	if c.TrustedProxies, err = parsePrefixes(env("TRUSTED_PROXIES", "")); err != nil {
+		return nil, err
+	}
+	if c.AllowedHosts, err = parseHosts(env("ALLOWED_HOSTS", "")); err != nil {
+		return nil, err
+	}
 
 	if c.MaxConcurrentJobs < 1 {
 		return nil, fmt.Errorf("MAX_CONCURRENT_JOBS must be >= 1")
@@ -134,6 +149,89 @@ func (c *Config) JobTimeout() time.Duration {
 	return time.Duration(c.JobTimeoutMinutes) * time.Minute
 }
 
+// HostAllowed matches a hostname - already lowercased and without its port -
+// against ALLOWED_HOSTS. An empty list allows everything, which is the default:
+// a LAN box reached by IP must keep working out of the box.
+//
+// The same matching is rendered into nginx's host map by the init script, so a
+// name the app refuses is refused for the static frontend as well.
+func (c *Config) HostAllowed(host string) bool {
+	if len(c.AllowedHosts) == 0 {
+		return true
+	}
+	for _, pat := range c.AllowedHosts {
+		switch {
+		case pat == "*":
+			return true
+		case strings.HasPrefix(pat, "*."):
+			// "*.example.com" is subdomains only, at any depth. The bare domain
+			// is a different name and has to be listed if it is wanted.
+			if suffix := pat[1:]; len(host) > len(suffix) && strings.HasSuffix(host, suffix) {
+				return true
+			}
+		case pat == host:
+			return true
+		}
+	}
+	return false
+}
+
+// parsePrefixes reads TRUSTED_PROXIES: a comma-separated list of CIDR blocks or
+// bare addresses, the latter standing for themselves.
+func parsePrefixes(s string) ([]netip.Prefix, error) {
+	var out []netip.Prefix
+	for _, field := range strings.Split(s, ",") {
+		field = strings.TrimSpace(field)
+		if field == "" {
+			continue
+		}
+		if p, err := netip.ParsePrefix(field); err == nil {
+			out = append(out, p.Masked())
+			continue
+		}
+		addr, err := netip.ParseAddr(field)
+		if err != nil {
+			return nil, fmt.Errorf("TRUSTED_PROXIES: %q is neither an IP address nor a CIDR block", field)
+		}
+		addr = addr.Unmap()
+		out = append(out, netip.PrefixFrom(addr, addr.BitLen()))
+	}
+	return out, nil
+}
+
+// parseHosts reads ALLOWED_HOSTS. Entries are hostnames, IP literals, "*.suffix"
+// patterns, or a lone "*" meaning any. A port is rejected rather than ignored:
+// the compared hostname never has one, so an entry carrying one would silently
+// match nothing.
+func parseHosts(s string) ([]string, error) {
+	var out []string
+	for _, field := range strings.Split(s, ",") {
+		host := strings.ToLower(strings.TrimSpace(field))
+		if host == "" {
+			continue
+		}
+		if host == "*" {
+			return []string{"*"}, nil
+		}
+		body := strings.TrimPrefix(host, "*.")
+		if !isBracketedIPv6(body) && (body == "" || strings.ContainsAny(body, "*:/@[] ")) {
+			return nil, fmt.Errorf("ALLOWED_HOSTS: %q must be a hostname, an IP literal, or *.suffix - no scheme, port or path", field)
+		}
+		out = append(out, host)
+	}
+	return out, nil
+}
+
+// An IPv6 literal in a Host header is bracketed, so it is the one entry that is
+// allowed to contain colons.
+func isBracketedIPv6(host string) bool {
+	if !strings.HasPrefix(host, "[") || !strings.HasSuffix(host, "]") {
+		return false
+	}
+	addr, err := netip.ParseAddr(host[1 : len(host)-1])
+	return err == nil && addr.Is6()
+}
+
 func env(key, def string) string {
 	if v, ok := os.LookupEnv(key); ok && v != "" {
 		return v
@@ -153,6 +251,22 @@ func envInt(key string, def int) int {
 		return def
 	}
 	return n
+}
+
+func envBool(key string, def bool) bool {
+	v, ok := os.LookupEnv(key)
+	if !ok || v == "" {
+		return def
+	}
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	}
+	slog.Warn("ignoring unparseable value, using the default",
+		"var", key, "value", v, "default", def)
+	return def
 }
 
 func parseLevel(s string) (slog.Level, error) {

@@ -488,7 +488,7 @@
             <button
               type="submit"
               class="btn btn-primary"
-              x-bind:disabled="submitting === 'download'"
+              x-bind:disabled="!downloadReady() || submitting === 'download'"
             >
               <i data-lucide="play"></i>
               <span

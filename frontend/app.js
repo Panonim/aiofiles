@@ -1134,6 +1134,12 @@ function mediaApp() {
       return !busy && this.readyUploads(tab).length > 0;
     },
 
+    /* The download tab's equivalent of uploadReady: a link, not a file, is what
+       submitDownload needs, and it trims the same way before checking. */
+    downloadReady() {
+      return this.probe.url.trim().length > 0;
+    },
+
     uploadBusy(tab) {
       return this.uploads[tab].some(function (u) {
         return u.uploading;

@@ -29,6 +29,9 @@ Read by the Go process (`internal/config/config.go`):
 | `QUEUE_DEPTH` | `256` | Buffered channel size. Submissions beyond this are recorded as failed jobs and answered with 503. |
 | `DEFAULT_RETENTION_DAYS` | `7` | Retention applied when a job does not specify one. Must be 0, 1, 7 or 30. |
 | `MAX_UPLOAD_MIB` | `4096` | Per-file upload cap. Also drives nginx's `client_max_body_size`. `0` means unlimited on both. Negative values fail startup. |
+| `TRUSTED_PROXIES` | *(empty)* | Comma-separated IPs or CIDR blocks whose `X-Forwarded-*` headers are believed. Loopback is always trusted on top of this. An unparseable entry fails startup. |
+| `ALLOWED_HOSTS` | *(empty)* | Comma-separated names the instance answers to; empty means any. `*.example.com` matches subdomains at any depth, `*` means any. An entry with a scheme, port or path fails startup. |
+| `PROXY_ONLY` | `0` | `1` refuses any request whose `Host` is a bare IP address, or that did not arrive through a trusted proxy. |
 | `LOG_LEVEL` | `warn` | `debug`, `info`, `warn`/`warning` or `error`. Anything else fails startup. |
 | `LISTEN_ADDR` | `127.0.0.1:1144` | Where the Go server binds *inside* the container. |
 | `DATA_DIR` | `/data` | Root of every other path below. |
@@ -41,6 +44,10 @@ Read by the Go process (`internal/config/config.go`):
 | `FFMPEG_BIN` | `ffmpeg` | ditto |
 | `FFPROBE_BIN` | `ffprobe` | ditto |
 | `MAGICK_BIN` | `magick` | ditto |
+
+`TRUSTED_PROXIES`, `ALLOWED_HOSTS` and `PROXY_ONLY` are read by the init script
+as well, which renders the same host rules into nginx so they cover the frontend
+and not only the API.
 
 Read by the container's init script or the image itself, never by the Go process:
 
@@ -190,3 +197,80 @@ Outside the container the two can still disagree — your own nginx, your own
 are detected (`accelPath` returns false) and quietly stream through Go instead, so
 a mismatch costs you the `sendfile()` fast path rather than serving the wrong
 file.
+
+## Reverse proxy: TRUSTED_PROXIES, ALLOWED_HOSTS, PROXY_ONLY
+
+Three variables, each answering a different question. All three default to off,
+so a fresh install stays reachable at `http://<lan-ip>:1144`.
+
+### TRUSTED_PROXIES — whose forwarding headers to believe
+
+`X-Forwarded-For`, `X-Forwarded-Proto` and `X-Forwarded-Host` are ordinary
+request headers. A client can send whatever it likes in them, so they are only
+worth reading when the connection came from a proxy you put there. That set is
+loopback (the bundled nginx, always) plus whatever you list here:
+
+```
+TRUSTED_PROXIES=172.18.0.0/16
+```
+
+Entries are CIDR blocks or bare addresses. With your proxy listed, the app reads
+the `X-Forwarded-For` chain from the right and stops at the first hop that is not
+one of yours — that is the client. Without it, the nearest hop it can vouch for
+is your proxy, and two things go wrong:
+
+- Login rate limiting counts every failed attempt against the proxy, so five
+  mistakes lock out everyone.
+- The session cookie is issued without `Secure` even though the browser is on
+  HTTPS.
+
+Neither is fatal, which is why this is not required. A client that pre-loads
+`X-Forwarded-For` with forgeries cannot use them to move the answer: everything
+a proxy appends lands to the right of whatever the client sent.
+
+### ALLOWED_HOSTS — which names the instance answers to
+
+```
+ALLOWED_HOSTS=aio.example.com,*.media.example.com
+```
+
+Anything else gets 403. Matching is on the hostname only — the port is stripped
+first, so entries must not carry one. `*.example.com` matches subdomains at any
+depth (`a.example.com`, `a.b.example.com`) but *not* the bare `example.com`;
+list it separately if you want it. A lone `*` means any name, which is also what
+an empty value means.
+
+### PROXY_ONLY — no direct access by address
+
+```
+PROXY_ONLY=1
+```
+
+With this set, a request whose `Host` is a bare address is refused:
+
+```
+http://192.168.16.35:19882   403
+https://aio.example.com      works
+```
+
+The reasoning is that a reverse proxy is reached by the name it holds a
+certificate for, and nothing else is. So the name is what separates "came
+through the proxy" from "found the published port". A request that did not come
+from a trusted proxy at all is refused for the same reason, which is what makes
+the setting mean something when you run the binary without the bundled nginx.
+
+`localhost` is still allowed — it is only reachable from the box itself, and
+blocking it would break `curl` from inside the container for no gain.
+
+Both variables are enforced twice. The Go process applies them to the API, and
+the init script renders the same rules into an nginx `map` so the frontend is
+covered too — otherwise a blocked name would still load the UI and only fail
+once it started making calls. The container healthcheck is exempt: it reaches
+`/api/health` over a loopback-only listener on port 8001, because it necessarily
+asks with an IP in `Host`.
+
+Neither setting is a substitute for `AUTH_USERNAME`. `Host` is client-supplied;
+this stops a browser and a casual scan, not someone who can reach the port and
+send whatever header they like. What it does buy you is that the TLS and the
+access control living in your proxy cannot be walked around by typing the box's
+address instead.

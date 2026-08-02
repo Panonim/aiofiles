@@ -35,10 +35,21 @@ three `/api/auth/*` routes returns 401 without a valid session:
 ```
 
 Login failures are rate limited per client IP: more than 5 within 15 minutes and
-the source gets 429 until the window rolls over. The address comes from
-`X-Forwarded-For` (first entry), then `X-Real-IP`, then the socket — so anything
-that can reach the app directly can also spoof its way around the limit. Keep the
-port on localhost.
+the source gets 429 until the window rolls over. The address is taken from the
+`X-Forwarded-For` chain, read from the right and stopping at the first hop that
+is not a trusted proxy — loopback plus whatever `TRUSTED_PROXIES` lists — and
+falls back to `X-Real-IP` and then the socket. Headers from an untrusted peer
+are ignored outright, so anything that can reach the app directly is counted by
+its own address and cannot spoof its way around the limit. If your own proxy is
+not in `TRUSTED_PROXIES`, every attempt is counted against the proxy instead and
+five failures lock out everyone.
+
+If `ALLOWED_HOSTS` or `PROXY_ONLY` is set, a request for a name the instance
+does not answer to is refused before any of this, with 403:
+
+```json
+{"error": {"code": "host_not_allowed", "message": "this instance does not answer to that address"}}
+```
 
 ## Endpoints
 

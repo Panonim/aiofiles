@@ -6,13 +6,18 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"net/netip"
 
 	"aiofiles/internal/auth"
 	"aiofiles/internal/config"
 	"aiofiles/internal/jobs"
+	"aiofiles/internal/proxy"
 )
 
-const uploadsPath = "/api/uploads"
+const (
+	uploadsPath = "/api/uploads"
+	healthPath  = "/api/health"
+)
 
 // Prober is a function rather than an interface so this package never imports
 // internal/runner; the result is marshalled straight to JSON.
@@ -42,6 +47,7 @@ type server struct {
 	probe      Prober
 	probeLimit *probeLimiter
 	auth       *auth.Manager
+	trust      *proxy.Trust
 }
 
 func New(d Deps) http.Handler {
@@ -54,8 +60,10 @@ func New(d Deps) http.Handler {
 		am = auth.NewManager(d.Cfg)
 	}
 	inFlight := 1
+	var trusted []netip.Prefix
 	if d.Cfg != nil {
 		inFlight = d.Cfg.MaxConcurrentJobs
+		trusted = d.Cfg.TrustedProxies
 	}
 	s := &server{
 		cfg:        d.Cfg,
@@ -66,6 +74,7 @@ func New(d Deps) http.Handler {
 		probe:      d.Probe,
 		probeLimit: newProbeLimiter(inFlight),
 		auth:       am,
+		trust:      proxy.New(trusted),
 	}
 	return s.routes()
 }
@@ -73,7 +82,7 @@ func New(d Deps) http.Handler {
 func (s *server) routes() http.Handler {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("GET /api/health", s.handleHealth)
+	mux.HandleFunc("GET "+healthPath, s.handleHealth)
 	mux.HandleFunc("POST /api/auth/login", s.handleLogin)
 	mux.HandleFunc("POST /api/auth/logout", s.handleLogout)
 	mux.HandleFunc("GET /api/auth/me", s.handleMe)
@@ -101,6 +110,8 @@ func (s *server) routes() http.Handler {
 		writeError(w, http.StatusNotFound, "not_found", "no such endpoint")
 	})
 
-	// Outermost first: a panic anywhere below still becomes a logged 500.
-	return s.recoverMW(s.logMW(s.originMW(s.limitBodyMW(mux))))
+	// Outermost first: a panic anywhere below still becomes a logged 500, and
+	// a request to a name this instance does not answer to is turned away
+	// before any handler sees it.
+	return s.recoverMW(s.logMW(s.hostMW(s.originMW(s.limitBodyMW(mux)))))
 }

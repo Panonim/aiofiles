@@ -32,6 +32,13 @@ services:
       AUTH_PASSWORD_HASH: ${AUTH_PASSWORD_HASH:-}
       SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-720}
 
+      # --- reverse proxy ---
+      # Whose X-Forwarded-* headers to believe (loopback always is), which
+      # names to answer to, and whether to refuse direct access by address.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-}
+      PROXY_ONLY: ${PROXY_ONLY:-0}
+
       # One-time repair pass after changing PUID/PGID: recursively chowns
       # /data at startup. Leave at 0 for normal operation.
       FIX_OWNERSHIP: ${FIX_OWNERSHIP:-0}

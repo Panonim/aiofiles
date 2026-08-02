@@ -242,8 +242,12 @@ EXPOSE 8000
 # nginx is unprivileged and cannot bind :80, so it listens on 8000 and compose
 # publishes 1144:8000. Probing through nginx checks both processes at once;
 # /api/health is registered outside the auth middleware.
+#
+# Port 8001 is nginx's loopback-only health listener, not the published one:
+# this probe arrives with an IP in Host, which is exactly what PROXY_ONLY is
+# there to refuse on 8000.
 HEALTHCHECK --interval=60s --timeout=5s --start-period=15s --retries=3 \
-    CMD wget -q -O /dev/null http://127.0.0.1:8000/api/health || exit 1
+    CMD wget -q -O /dev/null http://127.0.0.1:8001/api/health || exit 1
 
 ENTRYPOINT ["/init"]
 

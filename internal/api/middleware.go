@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"net/netip"
 	"net/url"
 	"runtime/debug"
 	"strings"
@@ -74,6 +75,71 @@ func (s *server) logMW(next http.Handler) http.Handler {
 	})
 }
 
+// hostMW enforces the two reverse-proxy settings: ALLOWED_HOSTS, the names this
+// instance answers to, and PROXY_ONLY, which additionally refuses anything that
+// did not arrive through a proxy - the point being that
+// http://192.168.1.10:1144 stops working while https://aio.example.com keeps
+// working, so the proxy's TLS and access control cannot be walked around by
+// anyone who can reach the port.
+//
+// The bundled nginx applies the same host rules to the static frontend, so a
+// blocked name does not get as far as a loading UI that then fails on every
+// call. This is the backstop for a deployment that puts something else in front
+// or runs the binary on its own.
+func (s *server) hostMW(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.cfg == nil || (!s.cfg.ProxyOnly && len(s.cfg.AllowedHosts) == 0) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// The container healthcheck asks for this over loopback with an IP in
+		// Host. Locking it out would only make a correctly configured container
+		// report itself unhealthy, and the reply is a status and a boolean.
+		if r.URL.Path == healthPath {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		host := s.trust.Hostname(r)
+		if s.cfg.ProxyOnly {
+			// Without a proxy in front there is no forwarding hop to trust, so
+			// the peer is the client itself. In the shipped image the peer is
+			// always the bundled nginx and this is satisfied by construction.
+			if !s.trust.FromProxy(r) {
+				s.reject(w, r, host, "direct connection from an untrusted address")
+				return
+			}
+			// The name is what separates "came through the proxy" from "typed
+			// the box's address into a browser": a proxy is reached by the name
+			// it holds a certificate for, an IP literal never is.
+			if host == "" || isIPLiteral(host) {
+				s.reject(w, r, host, "PROXY_ONLY is set and the request used an address rather than a hostname")
+				return
+			}
+		}
+		if !s.cfg.HostAllowed(host) {
+			s.reject(w, r, host, "host is not in ALLOWED_HOSTS")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *server) reject(w http.ResponseWriter, r *http.Request, host, why string) {
+	s.log.Warn("rejected request", "host", host, "path", r.URL.Path,
+		"peer", r.RemoteAddr, "reason", why)
+	writeError(w, http.StatusForbidden, "host_not_allowed",
+		"this instance does not answer to that address")
+}
+
+// A Host of "192.168.16.35" or "[fd00::1]" is an address, not a name. The port
+// is already stripped by the time this is called.
+func isIPLiteral(host string) bool {
+	host = strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")
+	_, err := netip.ParseAddr(host)
+	return err == nil
+}
+
 // originMW is the whole cross-origin defence: a state-changing request may not
 // carry an Origin belonging to another site. With auth disabled - the shipped
 // default - there is no cookie to withhold, so this is what stops a random web
@@ -83,7 +149,7 @@ func (s *server) originMW(next http.Handler) http.Handler {
 		switch r.Method {
 		case http.MethodGet, http.MethodHead, http.MethodOptions:
 		default:
-			if !sameOrigin(r) {
+			if !s.sameOrigin(r) {
 				s.log.Warn("rejected cross-origin request",
 					"method", r.Method, "path", r.URL.Path, "origin", r.Header.Get("Origin"))
 				writeError(w, http.StatusForbidden, "cross_origin", "cross-origin request rejected")
@@ -94,7 +160,7 @@ func (s *server) originMW(next http.Handler) http.Handler {
 	})
 }
 
-func sameOrigin(r *http.Request) bool {
+func (s *server) sameOrigin(r *http.Request) bool {
 	// The browser computes this against the real request URL and page script
 	// cannot forge it, so same-origin/none is an authoritative allow signal.
 	switch r.Header.Get("Sec-Fetch-Site") {
@@ -112,33 +178,11 @@ func sameOrigin(r *http.Request) bool {
 	if err != nil || u.Host == "" {
 		return false // "null" and other opaque origins are not this site
 	}
-	scheme, host := requestOrigin(r)
+	// Only scheme and hostname are compared: the bundled nginx forwards $host,
+	// which has no port, and it listens on a different port than the one
+	// published to the browser, so the port is not knowable here.
+	scheme, host := s.trust.Origin(r)
 	return strings.EqualFold(u.Scheme, scheme) && strings.EqualFold(u.Hostname(), host)
-}
-
-// requestOrigin reconstructs this server's own origin. The bundled nginx sets
-// Host/X-Forwarded-Host from $host, which drops the port, and it listens on a
-// different port than the one published to the browser - so the port is simply
-// not knowable here and only scheme+hostname are compared.
-func requestOrigin(r *http.Request) (scheme, host string) {
-	scheme = "http"
-	if r.TLS != nil {
-		scheme = "https"
-	}
-	if v := firstValue(r.Header.Get("X-Forwarded-Proto")); v != "" {
-		scheme = v
-	}
-	host = r.Host
-	if v := firstValue(r.Header.Get("X-Forwarded-Host")); v != "" {
-		host = v
-	}
-	return scheme, (&url.URL{Host: host}).Hostname()
-}
-
-// A chain of proxies appends to these headers; the first entry is the client's.
-func firstValue(header string) string {
-	first, _, _ := strings.Cut(header, ",")
-	return strings.TrimSpace(first)
 }
 
 // Uploads carry their own, much larger limit and are skipped here.

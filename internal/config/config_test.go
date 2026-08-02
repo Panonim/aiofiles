@@ -17,6 +17,7 @@ func withEnv(t *testing.T, env map[string]string) string {
 		"MAX_UPLOAD_MIB", "MAX_CONCURRENT_JOBS", "QUEUE_DEPTH", "DEFAULT_RETENTION_DAYS",
 		"AUTH_USERNAME", "AUTH_PASSWORD_HASH", "SESSION_TTL_HOURS", "XACCEL_PREFIX",
 		"LOG_LEVEL", "YTDLP_BIN", "FFMPEG_BIN", "FFPROBE_BIN", "MAGICK_BIN",
+		"TRUSTED_PROXIES", "ALLOWED_HOSTS", "PROXY_ONLY",
 	} {
 		// t.Setenv first so the original value is restored on cleanup; the
 		// unset matters because an explicitly empty XACCEL_PREFIX is not the
@@ -280,5 +281,149 @@ func TestLoadPathOverrides(t *testing.T) {
 		if st, err := os.Stat(d); err != nil || !st.IsDir() {
 			t.Errorf("Load did not create %s: %v", d, err)
 		}
+	}
+}
+
+// The shipped default has to stay "reachable by IP on a LAN", so an instance
+// that sets nothing keeps answering to every name.
+func TestLoadProxyDefaults(t *testing.T) {
+	withEnv(t, nil)
+
+	c, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(c.TrustedProxies) != 0 || len(c.AllowedHosts) != 0 || c.ProxyOnly {
+		t.Errorf("proxy settings are not off by default: %+v", c)
+	}
+	if !c.HostAllowed("192.168.16.35") || !c.HostAllowed("aio.example.com") {
+		t.Error("an empty ALLOWED_HOSTS must allow everything")
+	}
+}
+
+func TestLoadTrustedProxies(t *testing.T) {
+	tests := []struct {
+		value   string
+		want    []string
+		wantErr bool
+	}{
+		{"", nil, false},
+		{"10.0.0.0/8", []string{"10.0.0.0/8"}, false},
+		// A bare address stands for itself, and the list tolerates the spacing
+		// a human writes in a .env file.
+		{"10.0.0.5, 192.168.1.0/24 ,,2001:db8::1", []string{
+			"10.0.0.5/32", "192.168.1.0/24", "2001:db8::1/128"}, false},
+		// Host bits set is a typo worth normalising rather than rejecting.
+		{"10.1.2.3/8", []string{"10.0.0.0/8"}, false},
+		{"not-an-ip", nil, true},
+		{"10.0.0.0/64", nil, true},
+	}
+	for _, tc := range tests {
+		t.Run("TRUSTED_PROXIES="+tc.value, func(t *testing.T) {
+			withEnv(t, map[string]string{"TRUSTED_PROXIES": tc.value})
+			c, err := Load()
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("Load accepted an unparseable TRUSTED_PROXIES")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if len(c.TrustedProxies) != len(tc.want) {
+				t.Fatalf("TrustedProxies = %v, want %v", c.TrustedProxies, tc.want)
+			}
+			for i, p := range c.TrustedProxies {
+				if p.String() != tc.want[i] {
+					t.Errorf("TrustedProxies[%d] = %s, want %s", i, p, tc.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestLoadAllowedHosts(t *testing.T) {
+	withEnv(t, map[string]string{
+		"ALLOWED_HOSTS": " AIO.example.com , *.media.example.com ,, 192.168.16.35 ",
+	})
+
+	c, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	allowed := []string{"aio.example.com", "files.media.example.com", "a.b.media.example.com", "192.168.16.35"}
+	for _, h := range allowed {
+		if !c.HostAllowed(h) {
+			t.Errorf("HostAllowed(%q) = false, want true", h)
+		}
+	}
+	blocked := []string{
+		"evil.example.com",
+		"media.example.com", // the bare domain is not one of its subdomains
+		"aio.example.com.evil.net",
+		"xaio.example.com",
+		"192.168.16.36",
+		"",
+	}
+	for _, h := range blocked {
+		if c.HostAllowed(h) {
+			t.Errorf("HostAllowed(%q) = true, want false", h)
+		}
+	}
+}
+
+func TestLoadAllowedHostsRejectsNonsense(t *testing.T) {
+	for _, v := range []string{
+		"https://aio.example.com", // scheme
+		"aio.example.com:8443",    // port
+		"aio.example.com/app",     // path
+		"aio.*.example.com",       // wildcard anywhere but in front
+		"*.",
+	} {
+		t.Run(v, func(t *testing.T) {
+			withEnv(t, map[string]string{"ALLOWED_HOSTS": v})
+			if _, err := Load(); err == nil {
+				t.Errorf("Load accepted ALLOWED_HOSTS=%q", v)
+			}
+		})
+	}
+}
+
+// "*" is the documented escape hatch for someone who wants PROXY_ONLY without
+// pinning a name.
+func TestLoadAllowedHostsWildcard(t *testing.T) {
+	withEnv(t, map[string]string{"ALLOWED_HOSTS": "*"})
+	c, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !c.HostAllowed("anything.example.com") || !c.HostAllowed("192.168.16.35") {
+		t.Error("ALLOWED_HOSTS=* must allow everything")
+	}
+}
+
+func TestLoadProxyOnly(t *testing.T) {
+	tests := []struct {
+		value string
+		want  bool
+	}{
+		{"1", true}, {"true", true}, {"YES", true}, {"on", true},
+		{"0", false}, {"false", false}, {"no", false}, {"off", false},
+		{"", false},
+		{"maybe", false}, // unparseable falls back to the default, with a warning
+	}
+	for _, tc := range tests {
+		t.Run("PROXY_ONLY="+tc.value, func(t *testing.T) {
+			withEnv(t, map[string]string{"PROXY_ONLY": tc.value})
+			c, err := Load()
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if c.ProxyOnly != tc.want {
+				t.Errorf("ProxyOnly = %v, want %v", c.ProxyOnly, tc.want)
+			}
+		})
 	}
 }

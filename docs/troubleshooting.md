@@ -231,7 +231,15 @@ deleted or swept by retention. If `./data/uploads` is growing, that is why.
 
 The app speaks plain HTTP, has no TLS, and has no brute-force protection beyond a
 per-IP login limiter. Fronting it with Caddy, Traefik or another nginx is
-reasonable. Four things bite.
+reasonable. Start by telling the app your proxy exists:
+
+```
+TRUSTED_PROXIES=172.18.0.0/16
+```
+
+Nothing outside that list (plus loopback, where the bundled nginx lives) has its
+`X-Forwarded-*` headers believed, which is what the next two problems are about.
+Four things bite.
 
 **Progress bars never move.** Your proxy is buffering the SSE stream. The app
 sends `X-Accel-Buffering: no` and the bundled nginx turns off `proxy_buffering`,
@@ -242,18 +250,22 @@ default.
 
 **Login succeeds and immediately bounces back to the login page.** The session
 cookie is issued with `Secure` only when the app can tell the original request was
-HTTPS — direct TLS, or `X-Forwarded-Proto: https`. If your proxy terminates TLS
-but does not forward that header, the cookie is issued without `Secure`, which
-still works; the broken direction is the reverse — a proxy claiming `https` while
-you browse over plain HTTP, in which case the browser silently drops the cookie
-and every request looks unauthenticated. Make the header match reality.
+HTTPS — direct TLS, or `X-Forwarded-Proto: https` *from a trusted proxy*. If your
+proxy terminates TLS but does not forward that header, or forwards it but is not
+in `TRUSTED_PROXIES`, the cookie is issued without `Secure`, which still works;
+the broken direction is the reverse — a proxy claiming `https` while you browse
+over plain HTTP, in which case the browser silently drops the cookie and every
+request looks unauthenticated. Make the header match reality.
 
-**Login rate limiting counts the wrong address.** The limiter reads
-`X-Forwarded-For` first, then `X-Real-IP`, then the socket. A proxy that does not
-set them makes every attempt look like it came from one address, so five failures
-lock out everyone. A proxy that passes a client-supplied `X-Forwarded-For`
-through unmodified lets an attacker rotate it and bypass the limit entirely. Set
-the header at the edge, from the real connection.
+**Login rate limiting counts the wrong address.** The limiter walks
+`X-Forwarded-For` from the right and takes the first hop that is not a trusted
+proxy, then falls back to `X-Real-IP` and the socket. A proxy that is not in
+`TRUSTED_PROXIES` is the first untrusted hop itself, so every attempt looks like
+it came from one address and five failures lock out everyone. Add it to
+`TRUSTED_PROXIES` and make sure it sets the header from the real connection. A
+client-supplied `X-Forwarded-For` passed through unmodified is harmless: forged
+entries land to the left of what your proxies append, and the walk stops before
+reaching them.
 
 **Large uploads.** See the previous section — the outer proxy's body limit and
 read timeouts apply too.
@@ -262,6 +274,46 @@ Finally: the shipped port mapping is `127.0.0.1:1144:8000`. If you put a proxy o
 the same host, keep it. Only drop the `127.0.0.1:` prefix if something other than
 a local proxy genuinely needs to reach the port, and never without
 `AUTH_USERNAME` set.
+
+---
+
+## The proxy works but the IP does not (or vice versa)
+
+**Symptom.** `https://aio.example.com` works, `http://192.168.16.35:19882`
+returns a bare 403, or an unexpected name does.
+
+That is `PROXY_ONLY=1` and/or `ALLOWED_HOSTS` doing their job — see
+[configuration.md](configuration.md#reverse-proxy-trusted_proxies-allowed_hosts-proxy_only).
+The API answers with JSON:
+
+```json
+{"error": {"code": "host_not_allowed", "message": "this instance does not answer to that address"}}
+```
+
+and the frontend gets nginx's plain 403, because the init script renders the same
+rules into an nginx `map` — otherwise the UI would load and then fail on every
+call.
+
+Things worth checking when it refuses a name it should accept:
+
+- `ALLOWED_HOSTS` entries carry no port and no scheme. `aio.example.com:8443`
+  fails startup; the port is stripped before matching.
+- `*.example.com` does not match the bare `example.com`. List both if you need
+  both.
+- The name the app sees is `X-Forwarded-Host` if your proxy sets it, otherwise
+  `Host`. A proxy that rewrites `Host` to its upstream (`127.0.0.1:1144`) and
+  sets neither is invisible from here — check with `LOG_LEVEL=debug`, the
+  rejection is logged with the host it decided on.
+- With `PROXY_ONLY=1` and no bundled nginx, the peer has to be in
+  `TRUSTED_PROXIES` or the request is refused whatever the name is.
+
+The container healthcheck is not affected: it goes through a loopback-only
+listener on port 8001 that skips the guard. If the healthcheck fails after
+setting these, it is not the guard.
+
+Neither setting replaces `AUTH_USERNAME`. `Host` comes from the client, so this
+stops browsers and casual scans, not someone who can reach the port and craft
+headers.
 
 ---
 

@@ -8,13 +8,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"log/slog"
-	"net"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
 	"aiofiles/internal/config"
+	"aiofiles/internal/proxy"
 )
 
 const CookieName = "aiofiles_session"
@@ -63,8 +62,9 @@ type failCounter struct {
 // Failure counters are deliberately not persisted: a write per failed login
 // costs more than the few seconds a restart hands an attacker.
 type Manager struct {
-	cfg *config.Config
-	ttl time.Duration
+	cfg   *config.Config
+	ttl   time.Duration
+	trust *proxy.Trust
 
 	mu       sync.Mutex
 	sessions map[string]time.Time // token -> expiry
@@ -81,6 +81,7 @@ func NewManager(cfg *config.Config) *Manager {
 	return &Manager{
 		cfg:      cfg,
 		ttl:      ttl,
+		trust:    proxy.New(cfg.TrustedProxies),
 		sessions: make(map[string]time.Time),
 		failures: make(map[string]*failCounter),
 	}
@@ -133,7 +134,7 @@ func (m *Manager) Login(w http.ResponseWriter, r *http.Request, username, passwo
 		return nil // nothing to log into
 	}
 
-	ip := ClientIP(r)
+	ip := m.trust.ClientIP(r)
 	if m.rateLimited(ip) {
 		return ErrRateLimited
 	}
@@ -178,7 +179,7 @@ func (m *Manager) Login(w http.ResponseWriter, r *http.Request, username, passwo
 		Expires:  expiry,
 		MaxAge:   int(m.ttl / time.Second),
 		HttpOnly: true,
-		Secure:   isTLS(r),
+		Secure:   m.trust.IsHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 	})
 	return nil
@@ -204,7 +205,7 @@ func (m *Manager) Logout(w http.ResponseWriter, r *http.Request) {
 		Expires:  time.Unix(0, 0),
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   isTLS(r),
+		Secure:   m.trust.IsHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 	})
 }
@@ -375,40 +376,6 @@ func newToken() (string, error) {
 	return hex.EncodeToString(b[:]), nil
 }
 
-// isTLS gates the Secure cookie attribute on the original client connection
-// having been HTTPS, so it is only set when the browser can honour it.
-func isTLS(r *http.Request) bool {
-	if r.TLS != nil {
-		return true
-	}
-	proto := r.Header.Get("X-Forwarded-Proto")
-	if i := strings.IndexByte(proto, ','); i >= 0 {
-		proto = proto[:i]
-	}
-	return strings.EqualFold(strings.TrimSpace(proto), "https")
-}
-
-// ClientIP derives the address the rate limiter counts against. The app is
-// deployed behind the bundled nginx, which APPENDS the real peer to whatever
-// X-Forwarded-For the client sent ($proxy_add_x_forwarded_for): only the LAST
-// element is proxy-written, everything before it is attacker-controlled.
-// X-Real-IP is next because nginx overwrites it with $remote_addr.
-func ClientIP(r *http.Request) string {
-	if xffs := r.Header.Values("X-Forwarded-For"); len(xffs) > 0 {
-		xff := xffs[len(xffs)-1]
-		if i := strings.LastIndexByte(xff, ','); i >= 0 {
-			xff = xff[i+1:]
-		}
-		if ip := strings.TrimSpace(xff); ip != "" {
-			return ip
-		}
-	}
-	if ip := strings.TrimSpace(r.Header.Get("X-Real-IP")); ip != "" {
-		return ip
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
-}
+// ClientIP is the address the rate limiter counts against; see internal/proxy
+// for how far into X-Forwarded-For it is willing to look.
+func (m *Manager) ClientIP(r *http.Request) string { return m.trust.ClientIP(r) }

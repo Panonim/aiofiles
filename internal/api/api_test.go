@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -815,5 +816,132 @@ func TestOversizedJSONBodyIsRejected(t *testing.T) {
 	}
 	if code, _ := errorField(t, raw); code != "body_too_large" {
 		t.Errorf("code = %q, want body_too_large", code)
+	}
+}
+
+// guardHandler is the middleware chain on its own: the host guard runs before
+// any handler, so these tests only ever reach endpoints that need no database.
+func guardHandler(t *testing.T, cfg *config.Config) http.Handler {
+	t.Helper()
+	return api.New(api.Deps{Cfg: cfg, Log: slog.New(slog.DiscardHandler)})
+}
+
+func guardRequest(t *testing.T, h http.Handler, remoteAddr, host string, hdr map[string]string) int {
+	t.Helper()
+	r := httptest.NewRequest(http.MethodGet, "/api/presets", nil)
+	r.RemoteAddr = remoteAddr
+	r.Host = host
+	for k, v := range hdr {
+		r.Header.Set(k, v)
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	return w.Code
+}
+
+// PROXY_ONLY exists so that reaching the box by address stops working while the
+// name the proxy answers to keeps working.
+func TestProxyOnlyBlocksAddressAccess(t *testing.T) {
+	h := guardHandler(t, &config.Config{ProxyOnly: true})
+
+	tests := []struct {
+		name       string
+		remoteAddr string
+		host       string
+		hdr        map[string]string
+		want       int
+	}{
+		{"ip and port", "127.0.0.1:1", "192.168.16.35:19882", nil, http.StatusForbidden},
+		{"bare ip", "127.0.0.1:1", "192.168.16.35", nil, http.StatusForbidden},
+		{"ipv6 literal", "127.0.0.1:1", "[fd00::1]:19882", nil, http.StatusForbidden},
+		{"loopback by address", "127.0.0.1:1", "127.0.0.1:1144", nil, http.StatusForbidden},
+		{"no host at all", "127.0.0.1:1", "", nil, http.StatusForbidden},
+		{"hostname through the proxy", "127.0.0.1:1", "aio.example.com", nil, http.StatusOK},
+		// The bundled nginx forwards $host; an address there is still an address.
+		{"forwarded hostname", "127.0.0.1:1", "127.0.0.1:1144",
+			map[string]string{"X-Forwarded-Host": "aio.example.com"}, http.StatusOK},
+		{"forwarded address", "127.0.0.1:1", "aio.example.com",
+			map[string]string{"X-Forwarded-Host": "192.168.16.35"}, http.StatusForbidden},
+		// Running the binary with no proxy in front and PROXY_ONLY set is a
+		// misconfiguration, and it fails closed.
+		{"untrusted peer", "192.168.16.20:5000", "aio.example.com", nil, http.StatusForbidden},
+		// A client cannot talk its way past the guard with a header.
+		{"untrusted peer claiming a good host", "192.168.16.20:5000", "192.168.16.35:19882",
+			map[string]string{"X-Forwarded-Host": "aio.example.com"}, http.StatusForbidden},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := guardRequest(t, h, tc.remoteAddr, tc.host, tc.hdr); got != tc.want {
+				t.Errorf("status = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAllowedHostsGuard(t *testing.T) {
+	cfg := &config.Config{AllowedHosts: []string{"aio.example.com", "*.media.example.com"}}
+	h := guardHandler(t, cfg)
+
+	tests := []struct {
+		host string
+		want int
+	}{
+		{"aio.example.com", http.StatusOK},
+		{"AIO.Example.com:8443", http.StatusOK},
+		{"files.media.example.com", http.StatusOK},
+		{"media.example.com", http.StatusForbidden},
+		{"192.168.16.35:19882", http.StatusForbidden},
+		{"aio.example.com.evil.net", http.StatusForbidden},
+	}
+	for _, tc := range tests {
+		t.Run(tc.host, func(t *testing.T) {
+			if got := guardRequest(t, h, "127.0.0.1:1", tc.host, nil); got != tc.want {
+				t.Errorf("status = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+// The container healthcheck reaches the app over loopback with an IP in Host,
+// so locking it out would only make a correctly configured container look
+// unhealthy.
+func TestHealthSurvivesTheHostGuard(t *testing.T) {
+	h := guardHandler(t, &config.Config{ProxyOnly: true, AllowedHosts: []string{"aio.example.com"}})
+
+	r := httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	r.RemoteAddr = "127.0.0.1:1"
+	r.Host = "127.0.0.1:8000"
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200: the healthcheck is locked out", w.Code)
+	}
+}
+
+// Nothing set is the shipped default and must not start refusing LAN access.
+func TestHostGuardIsOffByDefault(t *testing.T) {
+	h := guardHandler(t, &config.Config{})
+	for _, host := range []string{"192.168.16.35:19882", "aio.example.com", ""} {
+		if got := guardRequest(t, h, "192.168.16.20:5000", host, nil); got != http.StatusOK {
+			t.Errorf("host %q: status = %d, want 200", host, got)
+		}
+	}
+}
+
+// With TRUSTED_PROXIES set, the app has to believe the hop in front of nginx
+// rather than nginx itself.
+func TestTrustedProxyIsBelievedForTheOrigin(t *testing.T) {
+	cfg := &config.Config{
+		TrustedProxies: []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")},
+		ProxyOnly:      true,
+	}
+	h := guardHandler(t, cfg)
+
+	// Reached directly by an operator's proxy, with no bundled nginx in the way.
+	if got := guardRequest(t, h, "10.0.0.5:5000", "aio.example.com", nil); got != http.StatusOK {
+		t.Errorf("status = %d, want 200 for a trusted proxy", got)
+	}
+	if got := guardRequest(t, h, "10.1.2.3:5000", "192.168.16.35", nil); got != http.StatusForbidden {
+		t.Errorf("status = %d, want 403 for an address even from a trusted proxy", got)
 	}
 }

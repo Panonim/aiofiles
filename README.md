@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/images/aiofiles-banner.svg" width="45%"><br>
+<p align="center"><img src="docs/images/aiofiles-banner.svg" width="65%"><br>
 <a href="docs/configuration.md">Configuration</a> - <a href="docs/api.md">API</a> - <a href="docs/troubleshooting.md">Troubleshooting</a> - <a href="LICENSE">License</a><br><br>AIOFiles is a self-hosted media toolkit for downloading videos, converting and compressing files, and processing images.<br> It runs as a web app backed by background workers, stores its data on disk, and exposes the same functionality through an HTTP API.</p>
 
 <p align="center"><img src="docs/images/preview_1.png" width="46%"><img src="docs/images/preview_2.png" width="51.6%"></p>
@@ -37,6 +37,7 @@ Everything is driven by environment variables. The defaults and the rules that a
 ## Information
 - The app stores persistent data under `./data` by default.
 - Authentication is optional, but when it is enabled you need both a username and a password hash.
+- Behind a reverse proxy, set `TRUSTED_PROXIES` so login rate limiting and `Secure` cookies see the real client. `ALLOWED_HOSTS` and `PROXY_ONLY=1` restrict the instance to the name your proxy answers to, so `http://<lan-ip>:1144` stops working while `https://aio.example.com` keeps working.
 - Large uploads, retention, and worker concurrency are all controlled through environment variables rather than a settings screen.
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://www.shieldcn.dev/github/stars/panonim/aiofiles.svg?variant=secondary&amp;size=lg&amp;mode=dark&amp;theme=neutral&amp;font=space-grotesk"><img alt="GitHub Stars" src="https://www.shieldcn.dev/github/stars/panonim/aiofiles.svg?variant=secondary&amp;size=lg&amp;mode=light&amp;theme=neutral&amp;font=space-grotesk"></picture>
