@@ -15,7 +15,7 @@ container starts fine, and the job list is empty. You are also logged out.
 `/data/db/mediatool.db` to `/data/db/aiofiles.db`, so the app finds no file there
 and creates an empty one; the old database is still sitting next to it, untouched.
 The session cookie was renamed from `mediatool_session` to `aiofiles_session` at
-the same time, which is why your login did not survive — log in again and that part
+the same time, which is why your login did not survive - log in again and that part
 is done.
 
 **Fix.** Stop the container and rename the database, along with its `-wal` and
@@ -34,11 +34,11 @@ docker compose up -d
 Do not skip the two siblings if they exist: a `-wal` file holds committed
 transactions that are not in the main file yet, and leaving it behind loses them.
 If you would rather not move anything, add `DB_PATH: /data/db/mediatool.db` to the
-`environment:` block in `docker-compose.yml` — the shipped file does not pass
+`environment:` block in `docker-compose.yml` - the shipped file does not pass
 `DB_PATH` through, so putting it in `.env` alone does nothing.
 
 The first boot will already have created an empty `aiofiles.db`. `mv` replaces it,
-which is what you want — there is nothing in it. This is a one-time rename; once
+which is what you want - there is nothing in it. This is a one-time rename; once
 the file is moved there is no further migration to do.
 
 ---
@@ -63,7 +63,7 @@ docker compose up -d          # watch for "recursively chowning /data"
 docker compose up -d
 ```
 
-Leaving it at `1` permanently is not harmful, just slow — you pay for the walk on
+Leaving it at `1` permanently is not harmful, just slow - you pay for the walk on
 every restart.
 
 ---
@@ -81,7 +81,7 @@ receives a truncated string that is not a valid hash. Verification treats a
 malformed hash as an error rather than a quiet "wrong password", which is why you
 get a 500 instead of a 401.
 
-**Fix.** Single-quote it. Not double quotes — those still interpolate.
+**Fix.** Single-quote it. Not double quotes - those still interpolate.
 
 ```ini
 AUTH_PASSWORD_HASH='$argon2id$v=19$m=65536,t=3,p=2$c2FsdA$aGFzaA'
@@ -95,7 +95,7 @@ docker compose exec aiofiles sh -c 'printf %s "$AUTH_PASSWORD_HASH"' | wc -c
 
 A hash from `-hash-password` is 97 bytes. If you see far fewer, the quotes are
 missing. `AUTH_PASSWORD_HASH` wins over `AUTH_PASSWORD` when both are set, so a
-broken hash is not rescued by leaving the plaintext in place — clear one or the
+broken hash is not rescued by leaving the plaintext in place - clear one or the
 other.
 
 ---
@@ -112,18 +112,18 @@ the logs, near the top of each attempt.
 The usual culprits:
 
 - `FATAL: AUTH_USERNAME is set but neither AUTH_PASSWORD_HASH nor AUTH_PASSWORD is.`
-- `AUTH_USERNAME and AUTH_PASSWORD_HASH must both be set, or both empty` — you
+- `AUTH_USERNAME and AUTH_PASSWORD_HASH must both be set, or both empty` - you
   cleared the username but left the hash, or vice versa.
-- `DEFAULT_RETENTION_DAYS must be one of 0, 1, 7, 30 (got 14)` — the retention
+- `DEFAULT_RETENTION_DAYS must be one of 0, 1, 7, 30 (got 14)` - the retention
   menu is a closed set. See [configuration.md](configuration.md).
-- `unknown LOG_LEVEL "verbose"` — it is `debug`, `info`, `warn` or `error`.
+- `unknown LOG_LEVEL "verbose"` - it is `debug`, `info`, `warn` or `error`.
 - `MAX_CONCURRENT_JOBS must be >= 1`.
 - `MAX_UPLOAD_MIB must be between 0 (unlimited) and …`, or `FATAL:
-  MAX_UPLOAD_MIB must be a whole number of MiB` — see below.
+  MAX_UPLOAD_MIB must be a whole number of MiB` - see below.
 - `XACCEL_PREFIX must start with / or be empty`, `FATAL: DOWNLOAD_DIR must be an
-  absolute path` — both are pasted into the nginx config, so they are checked
+  absolute path` - both are pasted into the nginx config, so they are checked
   before it is rendered.
-- `FATAL: generated /etc/nginx/nginx.conf does not parse` — only reachable if you
+- `FATAL: generated /etc/nginx/nginx.conf does not parse` - only reachable if you
   have modified the config template.
 
 **Fix.** Read the message; they all name the variable. `docker compose logs
@@ -155,7 +155,7 @@ docker compose build --no-cache aiofiles && docker compose up -d
 If you skip the checksums the build fails rather than shipping something
 unverified. That is deliberate; do not work around it.
 
-Before you rebuild, rule out the boring causes — the site may want cookies or a
+Before you rebuild, rule out the boring causes - the site may want cookies or a
 login, may be geo-blocked from your host, or may be rate-limiting you. Reproduce
 by hand to find out:
 
@@ -175,7 +175,7 @@ simply out of reach for this tool.
 failed with exactly that message.
 
 **Cause.** Intended behaviour. Their child processes died with the old container,
-and there is nothing to resume — a half-downloaded yt-dlp temp directory and a
+and there is nothing to resume - a half-downloaded yt-dlp temp directory and a
 half-finished two-pass encode are not restartable. On boot, every row still in
 `running` or `queued` is flipped to `failed`.
 
@@ -184,7 +184,7 @@ half-finished two-pass encode are not restartable. On boot, every row still in
 If this keeps happening without you restarting anything, the container is dying
 on its own. Check `docker compose logs` for an OOM kill (add a `mem_limit` if a
 pathological input is exhausting the host) and check whether one of the two
-services is crashing — either one halts the whole container by design.
+services is crashing - either one halts the whole container by design.
 
 **Related.** A `docker compose stop` with a browser tab holding the SSE stream
 open can end as a hard kill rather than a clean shutdown, because the graceful
@@ -204,8 +204,8 @@ That is the app's own limit. Raise `MAX_UPLOAD_MIB` and restart; nginx's
 `client_max_body_size` is derived from it automatically (value + 64 MiB), so
 there is no second place to change.
 
-**Symptom B.** An nginx HTML error page — "413 Request Entity Too Large" with no
-JSON — or the upload dies partway with no useful message.
+**Symptom B.** An nginx HTML error page - "413 Request Entity Too Large" with no
+JSON - or the upload dies partway with no useful message.
 
 That is not this container's nginx: its limit is deliberately 64 MiB *above* the
 app's so the app answers first. It is a reverse proxy in front of you with its own
@@ -222,7 +222,7 @@ for unlimited: the app skips its size check and nginx gets `client_max_body_size
 one of them quietly rejects an upload the other allowed.
 
 Uploads stream straight to disk, so a large limit costs disk, not memory. Note
-that an uploaded file is not deleted when its job finishes — only when the job is
+that an uploaded file is not deleted when its job finishes - only when the job is
 deleted or swept by retention. If `./data/uploads` is growing, that is why.
 
 ---
@@ -249,19 +249,19 @@ can forward it a piece at a time, and re-emits the app's `X-Accel-Buffering: no`
 on the way out). An outer nginx honours it; Caddy and Traefik do not, but they do
 not buffer a chunked `text/event-stream` either. If yours does, that is
 `proxy_buffering off` plus a `proxy_read_timeout` longer than your longest
-transcode. A buffered stream produces no error anywhere — `EventSource` fires
-neither `onopen` nor `onerror` — so a UI that loads fine but never updates is the
+transcode. A buffered stream produces no error anywhere - `EventSource` fires
+neither `onopen` nor `onerror` - so a UI that loads fine but never updates is the
 symptom to look for.
 
 **Login succeeds and immediately bounces back to the login page.** The session
 cookie is issued with `Secure` only when the app can tell the original request was
-HTTPS — direct TLS, or `X-Forwarded-Proto: https` *from a trusted proxy*. The
+HTTPS - direct TLS, or `X-Forwarded-Proto: https` *from a trusted proxy*. The
 bundled nginx passes your proxy's value through when the peer is in
 `TRUSTED_PROXIES` and overwrites it with `http` when it is not, so a proxy that
 terminates TLS but is not listed leaves the app believing the browser is on plain
 HTTP: no `Secure` on the cookie, and a `POST` from an `https://` page counted as
 cross-origin (403 `cross_origin`) on any browser that does not send
-`Sec-Fetch-Site`. The broken direction is the reverse — a proxy claiming `https`
+`Sec-Fetch-Site`. The broken direction is the reverse - a proxy claiming `https`
 while you browse over plain HTTP, in which case the browser silently drops the
 cookie and every request looks unauthenticated. Make the header match reality,
 and list the proxy.
@@ -276,7 +276,7 @@ client-supplied `X-Forwarded-For` passed through unmodified is harmless: forged
 entries land to the left of what your proxies append, and the walk stops before
 reaching them.
 
-**Large uploads.** See the previous section — the outer proxy's body limit and
+**Large uploads.** See the previous section - the outer proxy's body limit and
 read timeouts apply too.
 
 Finally: the shipped port mapping is `127.0.0.1:1144:8000`. If you put a proxy on
@@ -291,7 +291,7 @@ a local proxy genuinely needs to reach the port, and never without
 **Symptom.** `https://aio.example.com` works, `http://192.168.16.35:19882`
 returns a bare 403, or an unexpected name does.
 
-That is `PROXY_ONLY=1` and/or `ALLOWED_HOSTS` doing their job — see
+That is `PROXY_ONLY=1` and/or `ALLOWED_HOSTS` doing their job - see
 [configuration.md](configuration.md#reverse-proxy-trusted_proxies-allowed_hosts-proxy_only).
 The API answers with JSON:
 
@@ -300,7 +300,7 @@ The API answers with JSON:
 ```
 
 and the frontend gets nginx's plain 403, because the init script renders the same
-rules into an nginx `map` — otherwise the UI would load and then fail on every
+rules into an nginx `map` - otherwise the UI would load and then fail on every
 call.
 
 Things worth checking when it refuses a name it should accept:
@@ -311,7 +311,7 @@ Things worth checking when it refuses a name it should accept:
   both.
 - The name the app sees is `X-Forwarded-Host` if your proxy sets it, otherwise
   `Host`. A proxy that rewrites `Host` to its upstream (`127.0.0.1:1144`) and
-  sets neither is invisible from here — check with `LOG_LEVEL=debug`, the
+  sets neither is invisible from here - check with `LOG_LEVEL=debug`, the
   rejection is logged with the host it decided on.
 - With `PROXY_ONLY=1` and no bundled nginx, the peer has to be in
   `TRUSTED_PROXIES` or the request is refused whatever the name is.
@@ -339,7 +339,7 @@ they were *created*, not a day after you last looked at them.
 can see on disk.
 
 `X-Accel-Redirect` is pointing somewhere nginx cannot serve. Inside this container
-that should not happen any more — the init script renders the `location` and its
+that should not happen any more - the init script renders the `location` and its
 `alias` from `XACCEL_PREFIX` and `DOWNLOAD_DIR`, the same variables the app reads,
 and logs the pair at boot:
 
@@ -349,7 +349,7 @@ docker compose logs aiofiles | grep "X-Accel location"
 ```
 
 If that line does not match what the app is using, one of the two variables
-reached only one process — most often because you set it on the app but not in the
+reached only one process - most often because you set it on the app but not in the
 container's environment. If you are running your own nginx in front of the binary,
 its `location` and `alias` are yours to keep in step.
 
@@ -371,12 +371,12 @@ log it, and move on.
 
 ## A compress job fails instead of encoding
 
-**"cannot aim at a file size: the length of this file is unknown"** — ffprobe
+**"cannot aim at a file size: the length of this file is unknown"** - ffprobe
 could not read a duration from the input, and there is no way to divide a byte
 budget over an unknown running time. Quality-target compression (`light`,
 `balanced`, `aggressive`) does not need a duration and will still work.
 
-**"a 5 MB target cannot hold 2 hours 14 minutes of video at 128 kbps audio"** —
+**"a 5 MB target cannot hold 2 hours 14 minutes of video at 128 kbps audio"** -
 the arithmetic leaves under 100 kbps for video, which is not worth encoding.
 Raise the target, drop the audio bitrate, or accept that the file is too long.
 
@@ -395,7 +395,7 @@ pulls in decoders only. Without an encoder plugin, `magick in.png out.avif` exit
 0 and writes a PNG with an `.avif` extension. No error, no warning.
 
 **Fix.** The image installs `libheif-aom` and `libheif-x265` for exactly this
-reason. If you have been editing the Dockerfile's package list, put them back —
+reason. If you have been editing the Dockerfile's package list, put them back -
 and verify with `magick identify -format %m`, never with the exit code, because
 the exit code lies here.
 
@@ -409,7 +409,7 @@ not authorized by the security policy` naming a coder such as `MVG` or `PDF`.
 **Cause.** Working as intended. `magick` picks its decoder from the uploaded
 bytes rather than from the file name, so the image ships
 `/etc/ImageMagick-7/policy.xml` (source: `docker/policy.xml`) which denies every
-coder and re-allows only JPEG, PNG, WebP, AVIF, HEIC, GIF and TIFF — the formats
+coder and re-allows only JPEG, PNG, WebP, AVIF, HEIC, GIF and TIFF - the formats
 the app actually offers. The denied ones are the ones that shell out to
 delegates, fetch URLs or read arbitrary paths. SVG is denied there too: uploaded
 SVGs are rendered by `rsvg-convert` before ImageMagick sees them, and an SVG
@@ -426,6 +426,6 @@ inside the container prints what is in force; if it prints nothing, the config
 path moved and the policy is not being read at all.
 
 The matching `-limit` flags in `internal/runner/image.go` exist because
-`policy.xml` only ships in the image — a local `go run` gets its limits from
+`policy.xml` only ships in the image - a local `go run` gets its limits from
 argv. A large-but-legitimate image that trips `area`, `width`/`height` or `time`
 needs both raised, not one.

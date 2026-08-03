@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Before opening an issue, please check
-        [docs/troubleshooting.md](../blob/main/docs/troubleshooting.md) — several
+        [docs/troubleshooting.md](../blob/main/docs/troubleshooting.md) - several
         common problems (upgrades from `mediatool`, permissions, upload limits)
         are already documented there.
 

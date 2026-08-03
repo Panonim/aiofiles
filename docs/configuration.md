@@ -1,7 +1,7 @@
 # Configuration
 
 Everything is configured through environment variables. There is no config file
-and no settings screen that writes to disk — if you want to change behaviour, you
+and no settings screen that writes to disk - if you want to change behaviour, you
 change `.env` and restart the container.
 
 Two things to know before the table.
@@ -13,8 +13,8 @@ That is why `.env.example` can list every default without changing anything.
 Integers that do not parse fall back to the default. `config.envInt()` runs
 `strconv.Atoi` and, if it fails, logs a warning naming the variable and uses the
 default instead. `MAX_UPLOAD_MIB=4G` gets you 4096 and a line in the log; it is not
-a startup failure. A value that parses but is out of range — a negative
-`MAX_UPLOAD_MIB`, a `MAX_CONCURRENT_JOBS` of 0 — does stop the container.
+a startup failure. A value that parses but is out of range - a negative
+`MAX_UPLOAD_MIB`, a `MAX_CONCURRENT_JOBS` of 0 - does stop the container.
 
 ## The variables
 
@@ -33,7 +33,7 @@ Read by the Go process (`internal/config/config.go`):
 | `ALLOWED_HOSTS` | *(empty)* | Comma-separated names the instance answers to; empty means any. `*.example.com` matches subdomains at any depth, `*` means any. An entry with a scheme, port or path fails startup. |
 | `PROXY_ONLY` | `0` | `1` refuses any request whose `Host` is a bare IP address, or that did not arrive through a trusted proxy. |
 | `LOG_LEVEL` | `warn` | `debug`, `info`, `warn`/`warning` or `error`. Anything else fails startup. |
-| `LISTEN_ADDR` | `127.0.0.1:1144` | Where the Go server binds *inside* the container. nginx's `/api/*` locations proxy to the same address, so changing this moves both ends together — change the port to dodge a clash, but keep the host at `127.0.0.1` unless you know why you're changing it. |
+| `LISTEN_ADDR` | `127.0.0.1:1144` | Where the Go server binds *inside* the container. nginx's `/api/*` locations proxy to the same address, so changing this moves both ends together - change the port to dodge a clash, but keep the host at `127.0.0.1` unless you know why you're changing it. |
 | `DATA_DIR` | `/data` | Root of every other path below. |
 | `DB_PATH` | `$DATA_DIR/db/aiofiles.db` | SQLite file. |
 | `DOWNLOAD_DIR` | `$DATA_DIR/downloads` | Finished job output. Also becomes the `alias` of the X-Accel location in nginx. |
@@ -61,7 +61,7 @@ Read by the container's init script or the image itself, never by the Go process
 
 The image also sets `S6_BEHAVIOUR_IF_STAGE2_FAILS=2`, `S6_VERBOSITY=1`,
 `S6_KILL_GRACETIME=10000` and `S6_SERVICES_GRACETIME=10000`. You can override
-them, but the first one in particular is doing real work — see
+them, but the first one in particular is doing real work - see
 [architecture.md](architecture.md).
 
 ## The auth pair rule
@@ -73,7 +73,7 @@ them, but the first one in particular is doing real work — see
 AUTH_USERNAME and AUTH_PASSWORD_HASH must both be set, or both empty
 ```
 
-Both empty means authentication is off — every endpoint is open, including job
+Both empty means authentication is off - every endpoint is open, including job
 creation and file download. The init script shouts about this at every boot. Both
 set means login is required and there is exactly one account; there is no user
 table and no way to add a second.
@@ -95,7 +95,7 @@ unquoted `.env` values, so an unquoted hash arrives truncated and every login
 fails with a hash-decode error. Single quotes turn interpolation off.
 
 If `AUTH_USERNAME` is set and neither password variable is, the init script exits
-non-zero and the container stops. That is intentional — it is better than booting
+non-zero and the container stops. That is intentional - it is better than booting
 with auth silently disabled.
 
 The hashing parameters are fixed in the binary (64 MiB, t=3, p=2, 16-byte salt,
@@ -109,7 +109,7 @@ with a clear message. This looks arbitrary until you see why: the same set is
 enforced by `presets.checkRetention` on every incoming job, and the config default
 is what fills in `retention_days` when a client omits it. A default of 14 would
 mean every request that did not set retention explicitly failed validation with
-"must be one of 0, 1, 7, 30" — a confusing failure a long way from its cause. So
+"must be one of 0, 1, 7, 30" - a confusing failure a long way from its cause. So
 the check happens at boot instead.
 
 `0` means keep forever: no `expires_at` is written and the sweeper never looks at
@@ -131,7 +131,7 @@ how nginx spells "do not check". Nothing then stops a browser from filling the
 disk, so only do this when you control who can reach the instance.
 
 Everything else is refused at startup rather than half-applied. A negative value
-fails in `config.Load`; a value that is not a whole number of MiB — `4G`, `1.5` —
+fails in `config.Load`; a value that is not a whole number of MiB - `4G`, `1.5` -
 fails in the init script before nginx is rendered, and the app separately falls
 back to the default with a warning. There is no value that makes the two layers
 disagree.
@@ -149,7 +149,7 @@ The init script does not use `usermod` (busybox does not have it). It looks up
 whichever account already owns the id, and only creates one if the id is unused.
 That means any value works, including 0.
 
-The startup chown is not recursive, on purpose — walking a large downloads volume
+The startup chown is not recursive, on purpose - walking a large downloads volume
 on every boot is a slow way to start a container. So if you change `PUID`/`PGID`
 after the first run, the top-level directories get fixed but existing files do
 not, and jobs start failing on permission errors. Start once with
@@ -190,10 +190,10 @@ digits and `. _ - /`.
 The `internal` line is the load-bearing one and the script always writes it:
 without it, anyone could fetch any file under the download directory by guessing
 the path. Neither variable is in the `environment:` block of the shipped
-`docker-compose.yml`, in keeping with the other path variables — add them there if
+`docker-compose.yml`, in keeping with the other path variables - add them there if
 you want to change them.
 
-Outside the container the two can still disagree — your own nginx, your own
+Outside the container the two can still disagree - your own nginx, your own
 `alias`. That fails safe: output files that do not resolve under `DOWNLOAD_DIR`
 are detected (`accelPath` returns false) and quietly stream through Go instead, so
 a mismatch costs you the `sendfile()` fast path rather than serving the wrong
@@ -204,7 +204,7 @@ file.
 Three variables, each answering a different question. All three default to off,
 so a fresh install stays reachable at `http://<lan-ip>:1144`.
 
-### TRUSTED_PROXIES — whose forwarding headers to believe
+### TRUSTED_PROXIES - whose forwarding headers to believe
 
 `X-Forwarded-For`, `X-Forwarded-Proto` and `X-Forwarded-Host` are ordinary
 request headers. A client can send whatever it likes in them, so they are only
@@ -217,7 +217,7 @@ TRUSTED_PROXIES=172.18.0.0/16
 
 Entries are CIDR blocks or bare addresses. With your proxy listed, the app reads
 the `X-Forwarded-For` chain from the right and stops at the first hop that is not
-one of yours — that is the client. Without it, the nearest hop it can vouch for
+one of yours - that is the client. Without it, the nearest hop it can vouch for
 is your proxy, and three things go wrong:
 
 - Login rate limiting counts every failed attempt against the proxy, so five
@@ -225,14 +225,14 @@ is your proxy, and three things go wrong:
 - The session cookie is issued without `Secure` even though the browser is on
   HTTPS.
 - The API believes the browser is on `http://`, so a `POST` from a page loaded
-  over `https://` looks cross-origin. Browsers that send `Sec-Fetch-Site` — every
-  current one — are waved through on that instead, but anything older gets a 403
+  over `https://` looks cross-origin. Browsers that send `Sec-Fetch-Site` - every
+  current one - are waved through on that instead, but anything older gets a 403
   on every job it tries to submit.
 
 The last two are why this matters even when you do not care about the client
 address. The bundled nginx is reached over plain HTTP no matter what the browser
 is on, so `X-Forwarded-Proto` and `X-Forwarded-Host` are only ever right if they
-come from *your* proxy — which is exactly what listing it here permits. The same
+come from *your* proxy - which is exactly what listing it here permits. The same
 value renders an nginx `geo` block (`/etc/nginx/forwarded.conf` in a running
 container), so both hops draw the line in the same place: a trusted peer's
 `X-Forwarded-Proto`, `X-Forwarded-Host` and `X-Real-IP` are passed through, and
@@ -247,19 +247,19 @@ that is your proxy's address on that network; with the port published and the
 proxy on the host it is the Docker gateway (`172.17.0.1` by default), not the
 proxy's LAN address.
 
-### ALLOWED_HOSTS — which names the instance answers to
+### ALLOWED_HOSTS - which names the instance answers to
 
 ```
 ALLOWED_HOSTS=aio.example.com,*.media.example.com
 ```
 
-Anything else gets 403. Matching is on the hostname only — the port is stripped
+Anything else gets 403. Matching is on the hostname only - the port is stripped
 first, so entries must not carry one. `*.example.com` matches subdomains at any
 depth (`a.example.com`, `a.b.example.com`) but *not* the bare `example.com`;
 list it separately if you want it. A lone `*` means any name, which is also what
 an empty value means.
 
-### PROXY_ONLY — no direct access by address
+### PROXY_ONLY - no direct access by address
 
 ```
 PROXY_ONLY=1
@@ -278,12 +278,12 @@ through the proxy" from "found the published port". A request that did not come
 from a trusted proxy at all is refused for the same reason, which is what makes
 the setting mean something when you run the binary without the bundled nginx.
 
-`localhost` is still allowed — it is only reachable from the box itself, and
+`localhost` is still allowed - it is only reachable from the box itself, and
 blocking it would break `curl` from inside the container for no gain.
 
 Both variables are enforced twice. The Go process applies them to the API, and
 the init script renders the same rules into an nginx `map` so the frontend is
-covered too — otherwise a blocked name would still load the UI and only fail
+covered too - otherwise a blocked name would still load the UI and only fail
 once it started making calls. The container healthcheck is exempt: it reaches
 `/api/health` over a loopback-only listener on port 8001, because it necessarily
 asks with an IP in `Host`.

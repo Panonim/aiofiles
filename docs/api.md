@@ -37,7 +37,7 @@ three `/api/auth/*` routes returns 401 without a valid session:
 Login failures are rate limited per client IP: more than 5 within 15 minutes and
 the source gets 429 until the window rolls over. The address is taken from the
 `X-Forwarded-For` chain, read from the right and stopping at the first hop that
-is not a trusted proxy — loopback plus whatever `TRUSTED_PROXIES` lists — and
+is not a trusted proxy - loopback plus whatever `TRUSTED_PROXIES` lists - and
 falls back to `X-Real-IP` and then the socket. Headers from an untrusted peer
 are ignored outright, so anything that can reach the app directly is counted by
 its own address and cannot spoof its way around the limit. If your own proxy is
@@ -90,7 +90,7 @@ nginx it exercises both processes at once.
 
 200 `{"ok":true}` and a `Set-Cookie`. 401 `invalid_credentials`, 429
 `too_many_attempts`, 400 `invalid_json`, 500 `internal_error` (which is what a
-malformed `AUTH_PASSWORD_HASH` produces — the hash decoder returns an error
+malformed `AUTH_PASSWORD_HASH` produces - the hash decoder returns an error
 rather than a silent "wrong password").
 
 When auth is disabled, login always succeeds and issues nothing.
@@ -129,7 +129,7 @@ is what the server will use; its `speed`, `resolution` and `audio_bitrate` are
 the values the UI writes into its own controls, and the request may override
 them.
 
-This is the authoritative list. Do not hardcode the values below — read them from
+This is the authoritative list. Do not hardcode the values below - read them from
 here.
 
 ### POST /api/probe
@@ -168,7 +168,7 @@ of 8 refilling one every 3 seconds, counted instance-wide. Over that → 429
 `probe_busy` with `Retry-After`.
 
 A playlist URL is described through its first entry and `is_playlist` is true.
-Downloading a whole playlist is not supported — the download runner always passes
+Downloading a whole playlist is not supported - the download runner always passes
 `--no-playlist`.
 
 ### POST /api/uploads
@@ -182,7 +182,7 @@ first file part wins and the rest of the body is ignored.
 
 The `upload_id` is the stored basename: 16 hex characters, a dash, then the
 sanitised original name. Hand it back in `POST /api/jobs`. It is not a database
-row — the mapping is the filename itself.
+row - the mapping is the filename itself.
 
 Filenames are sanitised on the way in: separators, whitespace and shell-hostile
 characters become `_`, control characters are dropped, non-UTF-8 is repaired, and
@@ -209,7 +209,7 @@ a job stays on disk.
 
 `type` is `download`, `convert`, `compress` or `image`. A `download` job needs
 `url`; the other three need `upload_id` instead. `params` is validated against
-the type-specific struct with unknown fields rejected — a typo'd key is a 400,
+the type-specific struct with unknown fields rejected - a typo'd key is a 400,
 not a silently ignored option.
 
 Returns 202 and the created job. It is queued, not started; watch `/api/events`.
@@ -226,7 +226,7 @@ used as `--merge-output-format`), `embed_subs`, `embed_thumbnail`,
 `convert`: `preset` (default `custom`), `container` (`mp4`), `video_codec`
 (`h264`), `speed` (`medium`), `crf` (`23`), `resolution` (`source`), `frame_rate`
 (`source`), `audio_codec` (`aac`), `audio_bitrate` (`192`), `strip_metadata`,
-`retention_days`. A non-`custom` preset overrides `speed` and `crf` — and the
+`retention_days`. A non-`custom` preset overrides `speed` and `crf` - and the
 stored params record the resolved values, so the job record matches what actually
 ran.
 
@@ -245,13 +245,13 @@ which side of the threshold becomes paths), `quality`
 `strip_metadata` (default true), `retention_days`.
 
 Validation is not only per field. Container/codec combinations ffmpeg would
-refuse to mux are rejected up front — WebM only takes VP9 or AV1 with Opus, MP4
+refuse to mux are rejected up front - WebM only takes VP9 or AV1 with Opus, MP4
 and MOV reject VP9 and FLAC. `video_codec: "copy"` with a non-custom preset is
 rejected because there is nothing to tune, and with `target_size` because a
 copied stream keeps its original bitrate.
 
 400 `invalid_params` with the offending field. 503 `queue_full` when
-`QUEUE_DEPTH` submissions are already waiting — note the job row is still created
+`QUEUE_DEPTH` submissions are already waiting - note the job row is still created
 and marked failed, so the rejection is visible in the UI rather than vanishing.
 503 `no_runner` if no runner is registered for the type (should not happen in the
 shipped binary).
@@ -291,8 +291,8 @@ A job looks like this:
 ```
 
 `error` is present only when non-empty. The three timestamp pointers are omitted
-when null. `expires_at` is absent for a "forever" job. Absolute paths on disk —
-input and output — are deliberately not in the JSON.
+when null. `expires_at` is absent for a "forever" job. Absolute paths on disk -
+input and output - are deliberately not in the JSON.
 
 `status` is one of `queued`, `running`, `done`, `failed`, `canceled`, `expired`.
 In practice you will never see `expired`: the sweeper deletes the row rather than
@@ -310,7 +310,7 @@ The same object, or 404 `not_found`.
 
 Kills the running job's process group. 202 `{"ok":true,"id":"…"}`.
 
-409 `not_cancelable` if the job is not *running* — including when it is still
+409 `not_cancelable` if the job is not *running* - including when it is still
 queued. There is no way to remove a job from the queue; delete it instead, and
 the worker will pick up a row that no longer exists and log the failure.
 
@@ -327,7 +327,7 @@ event.
 Serves the finished file with a `Content-Disposition: attachment` header (RFC
 5987 `filename*` form when the name is not ASCII).
 
-With `XACCEL_PREFIX` set — the default in the container — the response is an empty
+With `XACCEL_PREFIX` set - the default in the container - the response is an empty
 200 carrying `X-Accel-Redirect`, and nginx does the actual sending. Without it,
 or when the output is somehow outside `DOWNLOAD_DIR`, Go serves the file directly
 and you get range support from `http.ServeFile`.
@@ -343,7 +343,7 @@ per-job subscription and no way to filter.
 Response headers include `Content-Type: text/event-stream`, `Cache-Control:
 no-cache` and `X-Accel-Buffering: no`. The bundled nginx also turns off
 `proxy_buffering`, `proxy_cache` and `chunked_transfer_encoding` for this exact
-location — without that the stream sits in a buffer and progress never arrives.
+location - without that the stream sits in a buffer and progress never arrives.
 
 Events:
 
@@ -357,7 +357,7 @@ Events:
 
 `progress` is `{"percent": 0–100, "stage": "downloading", "speed": "1.2MiB/s",
 "eta": "00:42"}`. `speed` and `eta` are omitted when unknown. `percent` is
-**negative when the percentage is genuinely unknown** — a stage change, or an
+**negative when the percentage is genuinely unknown** - a stage change, or an
 ffmpeg run on a file whose duration ffprobe could not read. Treat a negative
 value as "show an indeterminate bar", not as 0. Typical stages are `probing`,
 `downloading`, `merging`, `converting`, `encoding`, `analyzing`, `done`.
@@ -367,7 +367,7 @@ A `: keepalive` comment line goes out every 25 seconds, comfortably under nginx'
 
 Two things to design your client around. Progress events are throttled to roughly
 one every 400 ms per job, so do not expect every ffmpeg tick. And the bus drops
-events for a subscriber that is not keeping up rather than blocking a worker — the
+events for a subscriber that is not keeping up rather than blocking a worker - the
 frontend handles this by re-fetching `/api/jobs` on every (re)connect instead of
 assuming the stream is complete. Do the same.
 
