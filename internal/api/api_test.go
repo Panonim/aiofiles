@@ -220,6 +220,12 @@ func TestHealthAndMeta(t *testing.T) {
 		if body["max_upload_bytes"] != float64(1<<20) {
 			t.Errorf("max_upload_bytes = %v", body["max_upload_bytes"])
 		}
+		if body["version"] != "dev" {
+			t.Errorf("version = %v, want dev", body["version"])
+		}
+		if body["update_checks_disabled"] != false {
+			t.Errorf("update_checks_disabled = %v, want false", body["update_checks_disabled"])
+		}
 		for _, key := range []string{"video_containers", "audio_formats", "image_formats", "crf_bounds"} {
 			if _, ok := body[key]; !ok {
 				t.Errorf("presets payload is missing %q", key)

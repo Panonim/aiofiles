@@ -27,6 +27,7 @@ type Config struct {
 	QueueDepth           int
 	DefaultRetentionDays int
 	JobTimeoutMinutes    int // 0 means no limit
+	DisableUpdateChecks  bool
 
 	AuthUsername     string
 	AuthPasswordHash string // argon2id encoded hash; empty means auth disabled
@@ -65,6 +66,7 @@ func Load() (*Config, error) {
 		QueueDepth:           envInt("QUEUE_DEPTH", 256),
 		DefaultRetentionDays: envInt("DEFAULT_RETENTION_DAYS", 7),
 		JobTimeoutMinutes:    envInt("JOB_TIMEOUT_MINUTES", 720),
+		DisableUpdateChecks:  envBool("DISABLE_UPDATE_CHECKS", false),
 		AuthUsername:         env("AUTH_USERNAME", ""),
 		AuthPasswordHash:     env("AUTH_PASSWORD_HASH", ""),
 		SessionTTLHours:      envInt("SESSION_TTL_HOURS", 720),

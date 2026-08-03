@@ -1496,6 +1496,21 @@
             <table class="spec">
               <tbody>
                 <tr>
+                  <th scope="row">Version</th>
+                  <td>
+                    <span x-text="presets && presets.version ? presets.version : '-'"></span>
+                    <a
+                      class="btn btn-sm btn-icon btn-quiet"
+                      x-show="updateAvailable"
+                      x-bind:href="updateURL"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Update available - download the latest release"
+                      aria-label="Update available - download the latest release"
+                    ><i data-lucide="download"></i></a>
+                  </td>
+                </tr>
+                <tr>
                   <th scope="row">Status</th>
                   <td x-text="health.status || 'unknown'"></td>
                 </tr>

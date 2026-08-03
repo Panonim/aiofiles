@@ -11,6 +11,7 @@
 # --- pinned versions -------------------------------------------------------
 ARG ALPINE_VERSION=3.24
 ARG GO_VERSION=1.25
+ARG APP_VERSION=dev
 
 # Alpine.js 3.x, minified browser build (npm/jsDelivr).
 ARG ALPINEJS_VERSION=3.15.12
@@ -54,10 +55,11 @@ COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 
 ARG TARGETARCH
+ARG APP_VERSION
 RUN set -eu; \
     if [ -n "${TARGETARCH:-}" ]; then export GOARCH="${TARGETARCH}"; fi; \
     export CGO_ENABLED=0 GOOS=linux GOFLAGS=-trimpath; \
-    go build -ldflags="-s -w" -o /out/aiofiles ./cmd/server; \
+    go build -ldflags="-s -w -X aiofiles/internal/version.Value=${APP_VERSION}" -o /out/aiofiles ./cmd/server; \
     test -s /out/aiofiles
 
 

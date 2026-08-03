@@ -3,6 +3,10 @@
  * this file. Reconnects back off exponentially and reconcile once on open. */
 
 var THEME_KEY = "aiofiles.theme";
+var RELEASE_CACHE_KEY = "aiofiles.github-release";
+var RELEASE_CACHE_TTL = 24 * 60 * 60 * 1000;
+var RELEASES_URL = "https://api.github.com/repos/panonim/aiofiles/releases/latest";
+var RELEASE_PAGE = "https://github.com/panonim/aiofiles/releases/latest";
 
 /* Matches the field-flash animation in app.css. */
 var flashMs = 1600;
@@ -345,6 +349,23 @@ function storedTheme() {
   }
 }
 
+function releaseNumber(value) {
+  var match = String(value || "").trim().replace(/^v/i, "").match(/^(\d+)\.(\d+)\.(\d+)/);
+  return match
+    ? [Number(match[1]), Number(match[2]), Number(match[3])]
+    : null;
+}
+
+function newerRelease(latest, current) {
+  var a = releaseNumber(latest);
+  var b = releaseNumber(current);
+  if (!a || !b) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return a[i] > b[i];
+  }
+  return false;
+}
+
 function drawIcons() {
   if (window.lucide && typeof window.lucide.createIcons === "function") {
     window.lucide.createIcons();
@@ -357,6 +378,8 @@ function mediaApp() {
     jobType: "download",
     offline: "",
     presets: null,
+    updateAvailable: false,
+    updateURL: RELEASE_PAGE,
     health: { status: "", auth_required: false },
     me: { authenticated: false, username: "", auth_required: false },
     statusFilters: STATUS_FILTERS,
@@ -507,6 +530,7 @@ function mediaApp() {
         this.health = results[0] || this.health;
         this.me = results[1] || this.me;
         this.presets = results[2];
+        this.checkForUpdate();
         this.offline = "";
 
         if (this.me.auth_required && !this.me.authenticated) {
@@ -571,6 +595,65 @@ function mediaApp() {
       this.applyPreset();
       this.applyCompressTarget(true); // silent: nothing to point at on load
       this.clampCRF();
+    },
+
+    async checkForUpdate() {
+      var current = this.presets && this.presets.version;
+      if (
+        !current ||
+        current === "dev" ||
+        (this.presets && this.presets.update_checks_disabled)
+      ) {
+        this.updateAvailable = false;
+        return;
+      }
+
+      var cached = null;
+      try {
+        cached = JSON.parse(localStorage.getItem(RELEASE_CACHE_KEY) || "null");
+      } catch (e) {}
+
+      if (
+        cached &&
+        cached.current === current &&
+        Number(cached.checked_at) > Date.now() - RELEASE_CACHE_TTL
+      ) {
+        this.updateAvailable = newerRelease(cached.latest_tag, current);
+        this.updateURL = cached.latest_url || RELEASE_PAGE;
+        return;
+      }
+
+      try {
+        var response = await fetch(RELEASES_URL, {
+          headers: { Accept: "application/vnd.github+json" },
+          cache: "no-store",
+        });
+        if (!response.ok) throw new Error("GitHub release lookup failed");
+        var release = await response.json();
+        var latestTag = String(release.tag_name || "");
+        var latestURL = release.html_url || RELEASE_PAGE;
+        this.updateAvailable = newerRelease(latestTag, current);
+        this.updateURL = latestURL;
+        try {
+          localStorage.setItem(
+            RELEASE_CACHE_KEY,
+            JSON.stringify({
+              current: current,
+              latest_tag: latestTag,
+              latest_url: latestURL,
+              checked_at: Date.now(),
+            }),
+          );
+        } catch (e) {}
+      } catch (e) {
+        /* Cache the failed check too, so GitHub is not retried on every load. */
+        try {
+          localStorage.setItem(
+            RELEASE_CACHE_KEY,
+            JSON.stringify({ current: current, checked_at: Date.now() }),
+          );
+        } catch (ignored) {}
+      }
     },
 
     refreshIcons() {

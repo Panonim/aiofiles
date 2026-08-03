@@ -15,7 +15,7 @@ func withEnv(t *testing.T, env map[string]string) string {
 	for _, k := range []string{
 		"LISTEN_ADDR", "DATA_DIR", "DB_PATH", "DOWNLOAD_DIR", "TMP_DIR", "UPLOAD_DIR",
 		"MAX_UPLOAD_MIB", "MAX_CONCURRENT_JOBS", "QUEUE_DEPTH", "DEFAULT_RETENTION_DAYS",
-		"AUTH_USERNAME", "AUTH_PASSWORD_HASH", "SESSION_TTL_HOURS", "XACCEL_PREFIX",
+		"AUTH_USERNAME", "AUTH_PASSWORD_HASH", "SESSION_TTL_HOURS", "DISABLE_UPDATE_CHECKS", "XACCEL_PREFIX",
 		"LOG_LEVEL", "YTDLP_BIN", "FFMPEG_BIN", "FFPROBE_BIN", "MAGICK_BIN",
 		"TRUSTED_PROXIES", "ALLOWED_HOSTS", "PROXY_ONLY",
 	} {
@@ -53,6 +53,9 @@ func TestLoadDefaults(t *testing.T) {
 	if c.AuthEnabled() {
 		t.Error("auth should be disabled when no credentials are set")
 	}
+	if c.DisableUpdateChecks {
+		t.Error("update checks should be enabled by default")
+	}
 	if c.MaxUploadBytes() != 4096<<20 {
 		t.Errorf("MaxUploadBytes = %d", c.MaxUploadBytes())
 	}
@@ -67,6 +70,17 @@ func TestLoadDefaults(t *testing.T) {
 		if err != nil || !st.IsDir() {
 			t.Errorf("Load did not create %s: %v", d, err)
 		}
+	}
+}
+
+func TestLoadDisableUpdateChecks(t *testing.T) {
+	withEnv(t, map[string]string{"DISABLE_UPDATE_CHECKS": "1"})
+	c, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !c.DisableUpdateChecks {
+		t.Error("DisableUpdateChecks = false, want true")
 	}
 }
 

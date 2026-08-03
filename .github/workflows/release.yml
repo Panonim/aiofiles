@@ -34,7 +34,7 @@ jobs:
           GOOS: linux
           GOARCH: ${{ matrix.goarch }}
           GOFLAGS: -trimpath
-        run: go build -ldflags="-s -w" -o aiofiles ./cmd/server
+        run: go build -ldflags="-s -w -X aiofiles/internal/version.Value=${{ github.ref_name }}" -o aiofiles ./cmd/server
 
       - name: Package
         run: |
@@ -87,6 +87,8 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
+          build-args: |
+            APP_VERSION=${{ github.ref_name }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

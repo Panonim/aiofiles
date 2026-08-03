@@ -8,6 +8,7 @@ import (
 
 	"aiofiles/internal/auth"
 	"aiofiles/internal/presets"
+	"aiofiles/internal/version"
 )
 
 // yt-dlp occasionally hangs on a slow extractor; the browser should not wait forever.
@@ -63,6 +64,8 @@ func (s *server) handleMe(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) handlePresets(w http.ResponseWriter, r *http.Request) {
 	out := presets.All()
+	out["version"] = version.Value
+	out["update_checks_disabled"] = s.cfg.DisableUpdateChecks
 	out["default_retention_days"] = s.cfg.DefaultRetentionDays
 	out["max_upload_bytes"] = s.cfg.MaxUploadBytes()
 	writeJSON(w, http.StatusOK, out)
