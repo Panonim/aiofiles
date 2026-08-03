@@ -295,7 +295,6 @@ func TestParseImage(t *testing.T) {
 		field string
 	}{
 		{"unknown format", `{"format":"bmp"}`, "format"},
-		{"quality zero", `{"quality":0}`, "quality"},
 		{"quality above 100", `{"quality":101}`, "quality"},
 		{"negative quality", `{"quality":-1}`, "quality"},
 		{"negative width", `{"width":-1}`, "width"},
@@ -587,6 +586,7 @@ func TestAllIsJSONSerialisableAndComplete(t *testing.T) {
 		"audio_formats", "image_formats", "compress_targets", "retention_choices",
 		"crf_bounds", "target_size_bounds", "encode_preset_values",
 		"compress_target_values", "image_compress_quality",
+		"image_quality_presets", "image_convert_quality",
 	} {
 		if _, ok := all[key]; !ok {
 			t.Errorf("All() is missing key %q", key)

@@ -154,6 +154,10 @@ function isActive(job) {
   return job.status === "running" || job.status === "queued";
 }
 
+/* Lifecycle order, so a late snapshot (the create response can land after the
+   SSE stream has already reported the job running) never rewinds it. */
+var STATUS_RANK = { queued: 0, running: 1, done: 2, failed: 2, canceled: 2, expired: 2 };
+
 function ApiError(message, status, field) {
   this.name = "ApiError";
   this.message = message;
@@ -468,12 +472,13 @@ function mediaApp() {
         audio_bitrate: "128",
         strip_metadata: false,
         retention_days: 7,
+        width: 0,
+        height: 0,
       },
       image: {
         format: "webp",
-        /* No control for this: the convert tab is where quality is kept, the
-           compress tab is where it is traded away. */
         quality: 100,
+        quality_preset: "high",
         trace: "dark",
         svg_scale: SVG_SCALE_DEFAULT,
         width: 0,
@@ -592,8 +597,10 @@ function mediaApp() {
       z.audio_bitrate = first(p.audio_bitrates, z.audio_bitrate);
 
       this.forms.image.format = first(p.image_formats, this.forms.image.format);
+      this.forms.image.quality_preset = first(p.image_quality_presets, this.forms.image.quality_preset);
       this.applyPreset();
       this.applyCompressTarget(true); // silent: nothing to point at on load
+      this.applyImagePreset(true); // silent: nothing to point at on load
       this.clampCRF();
     },
 
@@ -879,6 +886,38 @@ function mediaApp() {
       this.forms.convert.preset = "custom";
     },
 
+    get imageQualityIsCustom() {
+      return this.forms.image.quality_preset === "custom";
+    },
+
+    /* What a quality preset resolves to, as published by the server. Null
+       for "custom", which resolves nothing. */
+    imagePresetResolved() {
+      var table = this.presets && this.presets.image_convert_quality;
+      var q = table && table[this.forms.image.quality_preset];
+      return typeof q === "number" ? q : null;
+    },
+
+    applyImagePreset(silent) {
+      var q = this.imagePresetResolved();
+      if (q === null) return;
+      this.setAndFlash("convert", this.forms.image, "quality", q, silent);
+    },
+
+    onImagePresetChange() {
+      this.applyImagePreset();
+      this.errors.convert = {};
+      this.formError.convert = "";
+    },
+
+    /* Touching the slider means the user has stopped following the preset. */
+    onImageQualityManualEdit() {
+      if (this.imageQualityIsCustom) return;
+      var q = this.imagePresetResolved();
+      if (q !== null && Number(this.forms.image.quality) === q) return;
+      this.forms.image.quality_preset = "custom";
+    },
+
     get compressBySize() {
       return this.forms.compress.target === "target_size";
     },
@@ -936,7 +975,9 @@ function mediaApp() {
     },
 
     setAndFlash(form, target, field, value, silent) {
-      if (!value || String(target[field]) === String(value)) return;
+      /* Not !value: 0 is a real value here (the image "original" preset). */
+      if (value === undefined || value === null || value === "") return;
+      if (String(target[field]) === String(value)) return;
       target[field] = value;
       if (silent) return;
       var seq = (this.flash[form][field] || 0) + 1;
@@ -1339,8 +1380,8 @@ function mediaApp() {
       return {
         format: "source",
         quality: Number(table[f.target]) || 0,
-        width: 0,
-        height: 0,
+        width: Number(f.width) || 0,
+        height: Number(f.height) || 0,
         strip_metadata: !!f.strip_metadata,
         retention_days: Number(f.retention_days),
       };
@@ -1505,6 +1546,9 @@ function mediaApp() {
       var idx = this.jobs.findIndex(function (j) {
         return j.id === job.id;
       });
+      if (idx !== -1 && STATUS_RANK[job.status] < STATUS_RANK[this.jobs[idx].status]) {
+        return false;
+      }
       if (idx === -1) this.jobs.unshift(job);
       else this.jobs.splice(idx, 1, job);
       this.sortJobs();
@@ -1692,7 +1736,7 @@ function mediaApp() {
       var l = this.live[job.id];
       if (l && typeof l.percent === "number") return l.percent;
       if (job.status === "done") return 100;
-      return typeof job.progress === "number" ? job.progress : 0;
+      return typeof job.progress === "number" ? job.progress : -1;
     },
 
     jobStage(job) {

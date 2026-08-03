@@ -999,6 +999,7 @@ th.num {
 .bar > span {
   display: block;
   height: 100%;
+  width: 0;
   background: var(--focus);
   transition: width 0.2s linear;
 }
@@ -1166,7 +1167,7 @@ th.num {
   display: block;
   height: 100%;
   width: 0;
-  background: var(--run);
+  background: var(--focus);
   transition: width 0.25s linear;
 }
 .job[data-status="running"] .job-rail {
@@ -1204,8 +1205,8 @@ th.num {
   color: var(--idle);
 }
 .badge[data-status="running"] {
-  background: var(--run-bg);
-  color: var(--run);
+  background: none;
+  color: var(--muted);
 }
 .badge[data-status="done"] {
   background: var(--ok-bg);
@@ -1301,6 +1302,7 @@ th.num {
   width: 13px;
   height: 13px;
   display: block;
+  transform: translateY(1px);
 }
 .queue-ring > * {
   grid-area: 1 / 1;
@@ -1345,6 +1347,7 @@ th.num {
   background: none;
   font: inherit;
   font-size: var(--fs-sm);
+  line-height: 1;
   color: var(--muted);
   cursor: pointer;
 }
@@ -1354,6 +1357,7 @@ th.num {
 .queue-link svg {
   width: 12px;
   height: 12px;
+  display: block;
 }
 
 .queue-body {

@@ -163,7 +163,9 @@ func magickArgs(input, output, format string, p *presets.ImageParams, exactSize 
 
 	switch format {
 	case "jpg", "webp", "avif":
-		args = append(args, "-quality", strconv.Itoa(p.Quality))
+		if p.Quality > 0 {
+			args = append(args, "-quality", strconv.Itoa(p.Quality))
+		}
 	case "png":
 		args = append(args, "-define", "png:compression-level=9")
 	case "gif":

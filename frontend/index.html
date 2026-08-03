@@ -816,6 +816,47 @@
                 </span>
               </div>
 
+              <div class="field" x-show="!svgInput" x-cloak>
+                <label class="label" for="im-quality-preset">Quality</label>
+                <select
+                  id="im-quality-preset"
+                  x-model="forms.image.quality_preset"
+                  x-on:change="onImagePresetChange()"
+                >
+                  <template x-for="o in options('image_quality_presets')" :key="o.value">
+                    <option x-bind:value="o.value" x-text="o.label"
+                      x-bind:selected="o.value === String(forms.image.quality_preset)"></option>
+                  </template>
+                </select>
+              </div>
+
+              <div class="field field-range" x-show="!svgInput" x-cloak>
+                <label class="label" for="im-quality">
+                  Quality
+                  <span class="muted" x-show="imageQualityIsCustom">- custom</span>
+                </label>
+                <div class="range-row">
+                  <input
+                    id="im-quality"
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="1"
+                    x-model.number="forms.image.quality"
+                    x-on:change="onImageQualityManualEdit()"
+                    x-bind:class="flashClass('convert', 'quality')"
+                    x-bind:aria-valuetext="forms.image.quality === 0 ? 'Original' : 'Quality ' + forms.image.quality"
+                  />
+                  <output class="range-value" for="im-quality"
+                    x-text="forms.image.quality === 0 ? 'Original' : forms.image.quality"
+                    >100</output
+                  >
+                </div>
+                <span class="hint" x-show="forms.image.quality === 0" x-cloak
+                  >No re-encode - keeps the source quality.</span
+                >
+              </div>
+
               <div class="field" x-show="forms.image.format === 'svg_trace'" x-cloak>
                 <label class="label" for="im-trace">Trace</label>
                 <select id="im-trace" x-model="forms.image.trace">
@@ -1198,6 +1239,42 @@
               x-cloak
             >
               <div class="field">
+                <label class="label" for="cp-im-width">Width</label>
+                <input
+                  id="cp-im-width"
+                  type="number"
+                  min="0"
+                  max="20000"
+                  step="1"
+                  x-model.number="forms.compress.width"
+                  x-bind:aria-invalid="errors.compress.width ? 'true' : 'false'"
+                />
+                <span class="hint">0 keeps the original width.</span>
+                <span class="field-error" x-show="errors.compress.width">
+                  <i data-lucide="alert-circle"></i>
+                  <span x-text="errors.compress.width"></span>
+                </span>
+              </div>
+
+              <div class="field">
+                <label class="label" for="cp-im-height">Height</label>
+                <input
+                  id="cp-im-height"
+                  type="number"
+                  min="0"
+                  max="20000"
+                  step="1"
+                  x-model.number="forms.compress.height"
+                  x-bind:aria-invalid="errors.compress.height ? 'true' : 'false'"
+                />
+                <span class="hint">0 keeps the original height.</span>
+                <span class="field-error" x-show="errors.compress.height">
+                  <i data-lucide="alert-circle"></i>
+                  <span x-text="errors.compress.height"></span>
+                </span>
+              </div>
+
+              <div class="field">
                 <label class="label" for="cp-im-retention">Keep the file for</label>
                 <select id="cp-im-retention" x-model="forms.compress.retention_days">
                   <template x-for="o in options('retention_choices')" :key="o.value">
@@ -1385,15 +1462,6 @@
                   <i data-lucide="download"></i>
                   <span class="btn-label">Download</span>
                 </a>
-                <button
-                  type="button"
-                  class="btn btn-sm"
-                  x-show="job.status === 'running' || job.status === 'queued'"
-                  x-on:click="cancelJob(job)"
-                >
-                  <i data-lucide="x"></i>
-                  <span class="btn-label">Cancel</span>
-                </button>
                 <button
                   type="button"
                   class="btn btn-sm btn-quiet btn-icon btn-danger"
@@ -1600,7 +1668,6 @@
                   <span x-bind:style="railWidth(job) ? 'width:' + railWidth(job) : ''"></span>
                 </div>
                 <div class="queue-status">
-                  <span class="badge" x-bind:data-status="job.status" x-text="job.status"></span>
                   <span class="truncate" x-text="queueStatusLine(job)"></span>
                 </div>
               </div>

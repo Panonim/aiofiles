@@ -84,6 +84,13 @@ var (
 		{"aggressive", "Aggressive - smallest file"},
 		{"target_size", "Target file size - I'll pick the megabytes"},
 	}
+	ImageQualityPresets = []Option{
+		{"original", "Original - no re-encode"},
+		{"high", "High - near-original quality"},
+		{"balanced", "Balanced - good quality, smaller file"},
+		{"small", "Small - smaller file, visible loss"},
+		{"custom", "Custom - set the quality myself"},
+	}
 	// Which side of the threshold potrace turns into paths.
 	TraceTargets = []Option{
 		{"dark", "The dark areas"},
@@ -144,6 +151,15 @@ var ImageCompressQuality = map[string]int{
 	"light":      90,
 	"balanced":   78,
 	"aggressive": 62,
+}
+
+// What each convert-tab quality preset resolves to. "original" is the 0
+// sentinel that skips -quality entirely (see magickArgs).
+var ImageConvertQuality = map[string]int{
+	"original": 0,
+	"high":     92,
+	"balanced": 80,
+	"small":    60,
 }
 
 const imageSourceFormat = "source"
@@ -213,7 +229,7 @@ type CompressParams struct {
 type ImageParams struct {
 	Format        string `json:"format"`
 	Trace         string `json:"trace"`   // svg_trace only
-	Quality       int    `json:"quality"` // 1..100
+	Quality       int    `json:"quality"` // 0..100, 0 keeps the encoder's default ("original")
 	Width         int    `json:"width"`   // 0 = keep
 	Height        int    `json:"height"`  // 0 = keep
 	StripMetadata bool   `json:"strip_metadata"`
@@ -401,8 +417,9 @@ func ParseImage(raw json.RawMessage, defaultRetention int) (*ImageParams, error)
 	if err := oneOf("trace", p.Trace, TraceTargets); err != nil {
 		return nil, err
 	}
-	if p.Quality < 1 || p.Quality > 100 {
-		return nil, invalid("quality", "must be between 1 and 100")
+	// 0 means "original": skip -quality and let the encoder use its own default.
+	if p.Quality < 0 || p.Quality > 100 {
+		return nil, invalid("quality", "must be between 0 and 100")
 	}
 	const maxDim = 20000
 	if p.Width < 0 || p.Width > maxDim {
@@ -717,6 +734,8 @@ func All() map[string]any {
 		"encode_preset_values":   encodePresetValues(),
 		"compress_target_values": compressTargetValues(),
 		"image_compress_quality": ImageCompressQuality,
+		"image_quality_presets":  ImageQualityPresets,
+		"image_convert_quality":  ImageConvertQuality,
 	}
 }
 
