@@ -23,6 +23,10 @@
     <link rel="alternate icon" href="/assets/favicon.ico" sizes="48x48 32x32 16x16" />
     <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png" />
     <link rel="manifest" href="/assets/site.webmanifest" />
+    <!-- iOS below 16.4 ignores display:standalone in the manifest. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="aiofiles" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#191d23" media="(prefers-color-scheme: dark)" />
     <!-- Sets the theme before the stylesheet loads so the right one paints
@@ -1453,14 +1457,17 @@
               </div>
 
               <div class="job-actions">
+                <!-- href stays for long-press and new tab; downloadJob only
+                     steps in where following it would unload an installed app. -->
                 <a
                   class="btn btn-sm"
                   x-show="job.status === 'done'"
                   x-bind:href="downloadUrl(job)"
                   x-bind:download="job.output_name || ''"
+                  x-on:click="downloadJob(job, $event)"
                 >
                   <i data-lucide="download"></i>
-                  <span class="btn-label">Download</span>
+                  <span class="btn-label" x-text="saveLabel(job)">Download</span>
                 </a>
                 <button
                   type="button"
@@ -1622,11 +1629,53 @@
 
     <!-- queue - work started from this tab is watched here rather than by
          throwing the user onto the Jobs list. Docked, not modal. -->
-    <div class="queue" x-show="queue.length" x-cloak x-transition.opacity>
+    <div class="queue" x-show="queue.length || save.phase" x-cloak x-transition.opacity>
+      <!-- save - an installed app fetches the file instead of navigating to it. -->
+      <div class="queue-card save-card" x-show="save.phase" role="status">
+        <div class="save-head">
+          <i data-lucide="download"></i>
+          <span class="save-name truncate" x-text="save.name"></span>
+          <button
+            type="button"
+            class="btn btn-quiet btn-icon"
+            x-on:click="cancelSave()"
+            aria-label="Dismiss"
+          >
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+
+        <div class="save-body" x-show="save.phase === 'fetching'">
+          <div class="bar"><span x-bind:style="'width:' + save.pct + '%'"></span></div>
+          <p class="hint" x-text="'Fetching ' + save.pct + '%'"></p>
+        </div>
+
+        <div class="save-body" x-show="save.phase === 'ready'">
+          <p class="hint">Ready. Save it to Files, or open it in a browser.</p>
+          <div class="btn-row">
+            <button type="button" class="btn btn-sm btn-primary" x-on:click="handOff(false)">
+              <i data-lucide="share"></i> Save
+            </button>
+            <button type="button" class="btn btn-sm" x-on:click="openOutside()">
+              <i data-lucide="external-link"></i> Open
+            </button>
+          </div>
+        </div>
+
+        <div class="save-body" x-show="save.phase === 'error'">
+          <p class="hint save-error" x-text="save.error"></p>
+          <div class="btn-row">
+            <button type="button" class="btn btn-sm" x-on:click="openOutside()">
+              <i data-lucide="external-link"></i> Open in browser
+            </button>
+          </div>
+        </div>
+      </div>
+
       <button
         type="button"
         class="queue-pill"
-        x-show="!queueOpen"
+        x-show="queue.length && !queueOpen"
         x-on:click="toggleQueue()"
         x-bind:aria-label="'Show processing queue, ' + queueRunning + ' active'"
       >
@@ -1636,7 +1685,12 @@
         <span class="num" x-text="queuePercent + '%'"></span>
       </button>
 
-      <div class="queue-card" x-show="queueOpen" role="region" aria-label="Processing queue">
+      <div
+        class="queue-card"
+        x-show="queue.length && queueOpen"
+        role="region"
+        aria-label="Processing queue"
+      >
         <div class="queue-head">
           <span class="eyebrow">Processing queue</span>
           <span class="queue-count num" x-show="queueRunning" x-text="queueRunning"></span>
@@ -1677,6 +1731,7 @@
                   x-show="job.status === 'done'"
                   x-bind:href="downloadUrl(job)"
                   x-bind:download="job.output_name || ''"
+                  x-on:click="downloadJob(job, $event)"
                   x-bind:aria-label="'Download ' + (job.output_name || job.id)"
                 >
                   <i data-lucide="download"></i>

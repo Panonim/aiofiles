@@ -1308,6 +1308,37 @@ th.num {
   grid-area: 1 / 1;
 }
 
+/* save card - a queue-card shell, stacked in the same dock so they can't overlap */
+.save-card {
+  padding: var(--sp-3);
+}
+.save-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.save-head svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  color: var(--muted);
+}
+.save-name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+.save-body .hint {
+  margin-top: 6px;
+}
+.save-body .btn-row {
+  margin-top: var(--sp-2);
+}
+.save-error {
+  color: var(--err);
+}
+
 .queue-card {
   width: 360px;
   max-width: calc(100vw - 2 * var(--sp-4));

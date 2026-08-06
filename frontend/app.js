@@ -180,6 +180,80 @@ function goToLogin() {
   }
 }
 
+/* Standalone iOS ignores the download attribute and navigates the one window
+   it has at the file, parking the user in a viewer with no way back. Those
+   saves fetch the bytes and hand them to the share sheet instead. */
+function isStandalone() {
+  if (window.navigator.standalone === true) return true; // iOS home screen
+  if (!window.matchMedia) return false;
+  return ["standalone", "fullscreen", "minimal-ui"].some(function (mode) {
+    return window.matchMedia("(display-mode: " + mode + ")").matches;
+  });
+}
+
+/* iPadOS calls itself a Mac; the touch points are what give it away. */
+function isIOS() {
+  var ua = window.navigator.userAgent || "";
+  if (/iPhone|iPad|iPod/.test(ua)) return true;
+  return /Macintosh/.test(ua) && (window.navigator.maxTouchPoints || 0) > 1;
+}
+
+/* A fetched file is held whole in memory; past this the OS is apt to kill the
+   web view mid-save, so bigger outputs open in a browser window instead. */
+var SAVE_BLOB_MAX = 512 * 1024 * 1024;
+
+/* XMLHttpRequest for the reason uploadFile uses it: progress. The xhr comes
+   back alongside the promise so a save in flight can be aborted. */
+function fetchBlob(url, onProgress) {
+  var xhr = new XMLHttpRequest();
+  var done = new Promise(function (resolve, reject) {
+    xhr.open("GET", url, true);
+    xhr.withCredentials = true;
+    xhr.responseType = "blob";
+
+    xhr.onprogress = function (e) {
+      if (e.lengthComputable && onProgress) {
+        onProgress(Math.round((e.loaded / e.total) * 100));
+      }
+    };
+
+    xhr.onload = function () {
+      if (xhr.status === 401) {
+        goToLogin();
+        reject(new ApiError("Your session ended. Sign in again.", 401));
+        return;
+      }
+      if (xhr.status >= 200 && xhr.status < 300 && xhr.response) {
+        resolve(xhr.response);
+        return;
+      }
+      var msg = "The file could not be fetched (" + xhr.status + ").";
+      reject(new ApiError(msg, xhr.status));
+    };
+
+    xhr.onerror = function () {
+      reject(new OfflineError("The download failed - the server is unreachable."));
+    };
+    xhr.onabort = function () {
+      reject(new ApiError("Save canceled.", 0));
+    };
+
+    if (onProgress) onProgress(0);
+    xhr.send();
+  });
+  return { xhr: xhr, done: done };
+}
+
+/* Outside the component: a Blob has no business in a reactive proxy, and only
+   one save runs at a time. */
+var saveRequest = null; // the xhr while bytes are still coming
+var savePending = null; // the File once they have landed, until it is saved
+var saveTick = 0; // retires a save whose abort lands after the next one started
+
+function emptySave() {
+  return { id: "", name: "", url: "", pct: 0, phase: "", error: "" };
+}
+
 /* A server error body is either a bare string or {field, reason}. */
 function apiErrorFrom(payload, status, fallback) {
   var err = payload && payload.error;
@@ -415,6 +489,9 @@ function mediaApp() {
        queue panel. `jobs` stays the single source of truth. */
     queue: [],
     queueOpen: false,
+    /* One managed save at a time. phase: "" | "fetching" | "ready" | "error",
+       where "ready" means the bytes are in hand and a tap is owed. */
+    save: emptySave(),
 
     submitting: "",
     /* Keyed by tab: an image job from either file tab reports its errors
@@ -510,11 +587,25 @@ function mediaApp() {
         });
 
       /* Relative timestamps refresh on real events, never on a timer. */
+      var hiddenAt = 0;
       document.addEventListener("visibilitychange", function () {
-        if (!document.hidden) {
-          self.now = Date.now();
-          self.refreshIcons();
+        if (document.hidden) {
+          hiddenAt = Date.now();
+          return;
         }
+        self.now = Date.now();
+        self.refreshIcons();
+        self.resume(hiddenAt);
+        hiddenAt = 0;
+      });
+
+      /* A page out of the back cache comes back with its DOM intact and its
+         sockets dead, and so does a suspended installed app. */
+      window.addEventListener("pageshow", function (e) {
+        if (e.persisted) self.resume(0);
+      });
+      window.addEventListener("online", function () {
+        self.resume(0);
       });
 
       window.addEventListener("beforeunload", function () {
@@ -1783,6 +1874,137 @@ function mediaApp() {
       return "/api/jobs/" + encodeURIComponent(job.id) + "/download";
     },
 
+    /* Only where a plain <a download> would strand the user: see isStandalone.
+       Everywhere else the anchor is left alone. */
+    managedSave() {
+      return isStandalone() && isIOS();
+    },
+
+    downloadJob(job, ev) {
+      if (!this.managedSave()) return; // let the anchor do its ordinary job
+      if (ev) ev.preventDefault();
+      this.saveFile(job);
+    },
+
+    async saveFile(job) {
+      var self = this;
+      var name = job.output_name || job.title || "download";
+      var url = this.downloadUrl(job);
+
+      /* Too big to hold in memory, but a browser window can still save it. */
+      if (Number(job.output_size) > SAVE_BLOB_MAX) {
+        this.openOutside(url);
+        return;
+      }
+
+      this.cancelSave();
+      var tick = ++saveTick;
+      this.save = { id: job.id, name: name, url: url, pct: 0, phase: "fetching", error: "" };
+
+      var req = fetchBlob(url, function (pct) {
+        if (tick === saveTick) self.save.pct = pct;
+      });
+      saveRequest = req;
+
+      var blob;
+      try {
+        blob = await req.done;
+      } catch (e) {
+        if (tick !== saveTick) return; // superseded; its card is not ours
+        saveRequest = null;
+        /* Canceled here, or already on the way to the login page. */
+        if (e.status === 0 || e.status === 401) {
+          this.save.phase = "";
+          return;
+        }
+        this.save.phase = "error";
+        this.save.error = e.message || "The file could not be fetched.";
+        return;
+      }
+      if (tick !== saveTick) return;
+      saveRequest = null;
+
+      savePending = new File([blob], name, {
+        type: blob.type || "application/octet-stream",
+      });
+      this.save.phase = "ready";
+      /* The share sheet wants a fresh user gesture and the fetch has probably
+         outlived the tap that started it. Try anyway - a short fetch usually
+         still counts - and leave a Save button when the system refuses. */
+      await this.handOff(true);
+    },
+
+    /* `auto` marks the attempt made straight after the fetch, where a refused
+       gesture is expected and must not read as an error. */
+    async handOff(auto) {
+      var file = savePending;
+      if (!file) return;
+
+      var payload = { files: [file], title: file.name };
+      var sharable =
+        navigator.canShare && navigator.share && navigator.canShare(payload);
+      /* No file sharing on old iOS, or on plain HTTP where it is undefined. */
+      if (!sharable) {
+        if (!auto) this.saveViaLink(file);
+        return;
+      }
+
+      try {
+        await navigator.share(payload);
+        this.endSave("Saved " + file.name + ".");
+      } catch (e) {
+        /* Dismissing the sheet is the user's call, so the card goes with it;
+           any other failure is the gesture, which the Save button retries. */
+        if (e && e.name === "AbortError") this.endSave("");
+        else if (!auto) this.saveViaLink(file);
+      }
+    },
+
+    saveViaLink(file) {
+      var url = URL.createObjectURL(file);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = file.name;
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      /* Revoking straight away can outrun the save still reading the URL. */
+      setTimeout(function () {
+        URL.revokeObjectURL(url);
+      }, 60000);
+      this.endSave("Saved " + file.name + ".");
+    },
+
+    /* The escape hatch: a separate window, which on iOS is the in-app browser
+       with its own Done button. */
+    openOutside(url) {
+      window.open(url || this.save.url, "_blank", "noopener");
+      this.endSave("");
+    },
+
+    cancelSave() {
+      var req = saveRequest;
+      saveRequest = null;
+      if (req) req.xhr.abort();
+      this.endSave("");
+    },
+
+    endSave(message) {
+      savePending = null;
+      this.save = emptySave();
+      if (message) this.announce = message;
+      this.refreshIcons();
+    },
+
+    /* The row button doubles as the progress readout for its own save. */
+    saveLabel(job) {
+      if (this.save.id === job.id && this.save.phase === "fetching") {
+        return this.save.pct + "%";
+      }
+      return "Download";
+    },
+
     async cancelJob(job) {
       try {
         await api("/jobs/" + encodeURIComponent(job.id) + "/cancel", {
@@ -1837,6 +2059,26 @@ function mediaApp() {
       if (idx !== -1) this.jobs.splice(idx, 1);
       delete this.live[id];
       this.dismissFromQueue(id);
+    },
+
+    /* Back in the foreground. A suspended app keeps an EventSource that still
+       reports itself open and will never fire again, so more than a glance
+       away counts as a dead stream rather than being trusted. Fires on the
+       foreground event, not on a timer. */
+    resume(hiddenAt) {
+      if (!this.presets) {
+        this.bootstrap(); // the first load never finished
+        return;
+      }
+      var away = hiddenAt ? Date.now() - hiddenAt : Infinity;
+      var dead = !this.es || this.es.readyState === 2 || away > 15000;
+      if (!dead) return;
+
+      this.backoff = 1000;
+      this.connectEvents(); // clears any pending reconnect itself
+      /* connectEvents reconciles only on a reconnect it saw through; a
+         first-ever open would leave whatever landed while away unseen. */
+      if (!this.everLinked) this.loadJobs();
     },
 
     connectEvents() {
