@@ -1418,10 +1418,6 @@
                   x-bind:aria-label="'Select ' + (job.title || job.id)"
                 />
               </label>
-              <span class="job-type" x-bind:title="typeLabel(job.type)">
-                <i x-bind:data-lucide="typeIcon(job.type)"></i>
-              </span>
-
               <div class="job-main">
                 <div class="job-title truncate" x-text="job.title || job.source || job.id"></div>
                 <!-- Two ranked groups: what state it is in, then what it made.
@@ -1448,15 +1444,30 @@
               </div>
 
               <div class="telemetry" x-show="job.status === 'running'">
-                <span class="pct" x-text="percentLabel(job)"></span>
-                <span class="aux">
-                  <span x-show="jobSpeed(job)" x-text="jobSpeed(job)"></span>
-                  <span x-show="jobSpeed(job) && jobEta(job)"> · </span>
-                  <span x-show="jobEta(job)" x-text="'ETA ' + jobEta(job)"></span>
-                </span>
+                <div class="telemetry-row">
+                  <span class="pct" x-text="percentLabel(job)"></span>
+                  <span class="aux">
+                    <span x-show="jobSpeed(job)" x-text="jobSpeed(job)"></span>
+                    <span x-show="jobSpeed(job) && jobEta(job)"> · </span>
+                    <span x-show="jobEta(job)" x-text="'ETA ' + jobEta(job)"></span>
+                  </span>
+                </div>
+                <div class="bar" x-bind:class="isIndeterminate(job) ? 'is-indeterminate' : ''">
+                  <span x-bind:style="railWidth(job) ? 'width:' + railWidth(job) : ''"></span>
+                </div>
               </div>
 
               <div class="job-actions">
+                <button
+                  type="button"
+                  class="btn btn-sm btn-quiet btn-icon"
+                  x-show="canPreview(job)"
+                  x-on:click="openPreview(job)"
+                  x-bind:aria-label="'Preview ' + (job.title || job.id)"
+                >
+                  <i data-lucide="eye"></i>
+                  <span class="btn-label">Preview</span>
+                </button>
                 <!-- href stays for long-press and new tab; downloadJob only
                      steps in where following it would unload an installed app. -->
                 <a
@@ -1476,6 +1487,7 @@
                   x-bind:aria-label="'Delete ' + (job.title || job.id)"
                 >
                   <i data-lucide="trash-2"></i>
+                  <span class="btn-label">Delete</span>
                 </button>
               </div>
 
@@ -1521,13 +1533,13 @@
           <div>
             <h1>Settings</h1>
             <p class="sub">
-              Appearance, notifications, and what this server is configured to do.
+              General preferences, and what this server is configured to do.
             </p>
           </div>
         </div>
 
         <div class="panel">
-          <div class="panel-head"><span class="eyebrow">Appearance</span></div>
+          <div class="panel-head"><span class="eyebrow">General</span></div>
           <div class="panel-body">
             <span class="label" id="theme-label">Theme</span>
             <div
@@ -1562,10 +1574,6 @@
               </button>
             </div>
           </div>
-        </div>
-
-        <div class="panel">
-          <div class="panel-head"><span class="eyebrow">Notifications</span></div>
           <div class="panel-body">
             <label class="check">
               <input
@@ -1649,7 +1657,16 @@
 
     <!-- queue - work started from this tab is watched here rather than by
          throwing the user onto the Jobs list. Docked, not modal. -->
-    <div class="queue" x-show="queue.length || save.phase" x-cloak x-transition.opacity>
+    <!-- The jobs list already shows every job's live status, so the docked
+         queue notification would just repeat it there - hidden outright on
+         that tab rather than left collapsed. The save flow stays put; it is
+         an in-progress action, not a status ping. -->
+    <div
+      class="queue"
+      x-show="(queue.length && tab !== 'jobs') || save.phase"
+      x-cloak
+      x-transition.opacity
+    >
       <!-- save - an installed app fetches the file instead of navigating to it. -->
       <div class="queue-card save-card" x-show="save.phase" role="status">
         <div class="save-head">
@@ -1695,7 +1712,7 @@
       <button
         type="button"
         class="queue-pill"
-        x-show="queue.length && !queueOpen"
+        x-show="queue.length && !queueOpen && tab !== 'jobs'"
         x-on:click="toggleQueue()"
         x-bind:aria-label="'Show processing queue, ' + queueRunning + ' active'"
       >
@@ -1707,7 +1724,7 @@
 
       <div
         class="queue-card"
-        x-show="queue.length && queueOpen"
+        x-show="queue.length && queueOpen && tab !== 'jobs'"
         role="region"
         aria-label="Processing queue"
       >
@@ -1776,6 +1793,45 @@
           </template>
         </div>
 
+      </div>
+    </div>
+
+    <!-- preview - a lightweight overlay, not the docked queue: it wants the
+         whole viewport for the media rather than a corner of it. -->
+    <div
+      class="preview"
+      x-show="preview"
+      x-cloak
+      x-transition.opacity.duration.150ms
+      x-on:keydown.escape.window="closePreview()"
+      x-on:click.self="closePreview()"
+    >
+      <div class="preview-card" x-show="preview" x-transition.scale.95.duration.150ms>
+        <div class="preview-head">
+          <span class="preview-title truncate" x-text="preview && (preview.job.title || preview.job.output_name)"></span>
+          <button type="button" class="btn btn-quiet btn-icon" x-on:click="closePreview()" aria-label="Close preview">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+        <div class="preview-body">
+          <img
+            x-show="preview && preview.kind === 'image'"
+            x-bind:src="preview && preview.kind === 'image' ? preview.url : ''"
+            x-bind:alt="preview && (preview.job.title || preview.job.output_name)"
+          />
+          <video
+            x-show="preview && preview.kind === 'video'"
+            x-bind:src="preview && preview.kind === 'video' ? preview.url : ''"
+            controls
+            autoplay
+          ></video>
+          <audio
+            x-show="preview && preview.kind === 'audio'"
+            x-bind:src="preview && preview.kind === 'audio' ? preview.url : ''"
+            controls
+            autoplay
+          ></audio>
+        </div>
       </div>
     </div>
   </body>

@@ -55,6 +55,8 @@ var IMAGE_FORMAT_BY_EXT = {
   gif: "gif", tif: "tiff", tiff: "tiff", svg: "svg",
 };
 
+var AUDIO_EXTS = ["mp3", "m4a", "aac", "flac", "wav", "ogg", "oga", "opus", "wma"];
+
 var SVG_SCALES = [0.25, 0.5, 1, 1.5, 2, 3, 4];
 var SVG_SCALE_DEFAULT = 2; // index of 1x
 var SVG_FALLBACK_SIZE = 1024;
@@ -198,6 +200,11 @@ function isIOS() {
   var ua = window.navigator.userAgent || "";
   if (/iPhone|iPad|iPod/.test(ua)) return true;
   return /Macintosh/.test(ua) && (window.navigator.maxTouchPoints || 0) > 1;
+}
+
+/* Mirrors the .job phone breakpoint in app.css. */
+function isMobileViewport() {
+  return !!(window.matchMedia && window.matchMedia("(max-width: 680px)").matches);
 }
 
 /* A fetched file is held whole in memory; past this the OS is apt to kill the
@@ -519,6 +526,8 @@ function mediaApp() {
     /* One managed save at a time. phase: "" | "fetching" | "ready" | "error",
        where "ready" means the bytes are in hand and a tap is owed. */
     save: emptySave(),
+    /* The open preview overlay: null when closed, else {job, kind, url}. */
+    preview: null,
 
     submitting: "",
     /* Keyed by tab: an image job from either file tab reports its errors
@@ -1792,7 +1801,9 @@ function mediaApp() {
     enqueue(id) {
       if (!id) return;
       if (this.queue.indexOf(id) === -1) this.queue.unshift(id);
-      this.queueOpen = true;
+      /* The docked panel eats real space on a phone; leave it collapsed to
+         the pill there and let the user open it. */
+      if (!isMobileViewport()) this.queueOpen = true;
       this.refreshIcons();
     },
 
@@ -1903,6 +1914,28 @@ function mediaApp() {
 
     downloadUrl(job) {
       return "/api/jobs/" + encodeURIComponent(job.id) + "/download";
+    },
+
+    /* Every finished job is media - image, audio or video - so the extension
+       alone is enough to pick the right tag; anything unrecognized falls
+       back to video since that is the broader player. */
+    mediaKind(job) {
+      var ext = extOf(job && job.output_name);
+      if (IMAGE_EXTS.indexOf(ext) !== -1) return "image";
+      if (AUDIO_EXTS.indexOf(ext) !== -1) return "audio";
+      return "video";
+    },
+
+    canPreview(job) {
+      return job.status === "done" && !!job.output_name;
+    },
+
+    openPreview(job) {
+      this.preview = { job: job, kind: this.mediaKind(job), url: this.downloadUrl(job) };
+    },
+
+    closePreview() {
+      this.preview = null;
     },
 
     /* Only where a plain <a download> would strand the user: see isStandalone.
@@ -2090,6 +2123,7 @@ function mediaApp() {
       if (idx !== -1) this.jobs.splice(idx, 1);
       delete this.live[id];
       this.dismissFromQueue(id);
+      if (this.preview && this.preview.job.id === id) this.closePreview();
     },
 
     /* Back in the foreground. A suspended app keeps an EventSource that still
