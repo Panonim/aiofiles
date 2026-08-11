@@ -3,6 +3,8 @@
  * this file. Reconnects back off exponentially and reconcile once on open. */
 
 var THEME_KEY = "aiofiles.theme";
+var SOUND_KEY = "aiofiles.finish-sound";
+var FINISH_SOUND_URL = "/assets/notification.wav";
 var RELEASE_CACHE_KEY = "aiofiles.github-release";
 var RELEASE_CACHE_TTL = 24 * 60 * 60 * 1000;
 var RELEASES_URL = "https://api.github.com/repos/panonim/aiofiles/releases/latest";
@@ -427,6 +429,30 @@ function storedTheme() {
   }
 }
 
+/* On unless it was turned off, so the setting is discovered by hearing it. */
+function storedSound() {
+  try {
+    return localStorage.getItem(SOUND_KEY) !== "off";
+  } catch (e) {
+    return true;
+  }
+}
+
+/* One element, reused: a fresh Audio per play leaks decoders on a long batch. */
+var finishAudio = null;
+function playFinishSound() {
+  try {
+    if (!finishAudio) finishAudio = new Audio(FINISH_SOUND_URL);
+    finishAudio.currentTime = 0;
+    var p = finishAudio.play();
+    /* A tab that never saw a gesture is refused by autoplay policy; silence
+       is the correct outcome there, not an error. */
+    if (p && p.catch) p.catch(function () {});
+  } catch (e) {
+    /* no audio available */
+  }
+}
+
 function releaseNumber(value) {
   var match = String(value || "").trim().replace(/^v/i, "").match(/^(\d+)\.(\d+)\.(\d+)/);
   return match
@@ -462,6 +488,7 @@ function mediaApp() {
     me: { authenticated: false, username: "", auth_required: false },
     statusFilters: STATUS_FILTERS,
     theme: storedTheme(),
+    finishSound: storedSound(),
     now: Date.now(),
 
     es: null,
@@ -578,6 +605,17 @@ function mediaApp() {
 
       window.addEventListener("hashchange", function () {
         self.applyHash();
+      });
+
+      /* The whole batch landing, not each file: the last active job in the
+         queue settling is the only moment worth a sound. */
+      this.$watch("queueRunning", function (now, was) {
+        if (now !== 0 || !was || !self.queue.length) return;
+        if (!self.finishSound) return;
+        /* "Not focused" covers a background tab and a window behind another
+           one, which are the cases where the user cannot see the queue. */
+        if (!document.hidden && document.hasFocus()) return;
+        playFinishSound();
       });
 
       window
@@ -1786,13 +1824,6 @@ function mediaApp() {
       return Math.round(total / list.length);
     },
 
-    /* Clearing only stops watching. The jobs keep running and stay in Jobs. */
-    clearQueue() {
-      this.queue = [];
-      this.queueOpen = false;
-      this.refreshIcons();
-    },
-
     dismissFromQueue(id) {
       var i = this.queue.indexOf(id);
       if (i !== -1) this.queue.splice(i, 1);
@@ -2202,6 +2233,18 @@ function mediaApp() {
       }
       applyTheme(choice);
       this.refreshIcons();
+    },
+
+    setFinishSound(on) {
+      this.finishSound = !!on;
+      try {
+        localStorage.setItem(SOUND_KEY, this.finishSound ? "on" : "off");
+      } catch (e) {
+        /* storage unavailable - the choice still applies this session */
+      }
+      /* Turning it on is a gesture, so this both previews the sound and buys
+         the autoplay permission the background play will need later. */
+      if (this.finishSound) playFinishSound();
     },
 
     async logout() {

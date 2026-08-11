@@ -1520,7 +1520,9 @@
         <div class="page-head">
           <div>
             <h1>Settings</h1>
-            <p class="sub">Appearance, and what this server is configured to do.</p>
+            <p class="sub">
+              Appearance, notifications, and what this server is configured to do.
+            </p>
           </div>
         </div>
 
@@ -1559,6 +1561,24 @@
                 <i data-lucide="moon"></i> Dark
               </button>
             </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><span class="eyebrow">Notifications</span></div>
+          <div class="panel-body">
+            <label class="check">
+              <input
+                type="checkbox"
+                x-bind:checked="finishSound"
+                x-on:change="setFinishSound($event.target.checked)"
+              />
+              Play a sound on job finish
+            </label>
+            <span class="hint" style="display: block; margin-top: 6px">
+              Plays once the whole queue is done, and only while this tab is in
+              the background.
+            </span>
           </div>
         </div>
 
@@ -1694,9 +1714,6 @@
         <div class="queue-head">
           <span class="eyebrow">Processing queue</span>
           <span class="queue-count num" x-show="queueRunning" x-text="queueRunning"></span>
-          <button type="button" class="queue-link" x-on:click="clearQueue()">
-            <i data-lucide="x"></i> clear
-          </button>
           <button
             type="button"
             class="btn btn-quiet btn-icon"
@@ -1743,7 +1760,7 @@
                   x-on:click="cancelJob(job)"
                   aria-label="Cancel"
                 >
-                  <i data-lucide="x"></i>
+                  <i data-lucide="trash-2"></i>
                 </button>
                 <button
                   type="button"

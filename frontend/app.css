@@ -1368,29 +1368,6 @@ th.num {
   color: var(--run);
 }
 
-/* A text action, not a button - it must not compete with a job's own. */
-.queue-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  border: 0;
-  padding: 2px 4px;
-  background: none;
-  font: inherit;
-  font-size: var(--fs-sm);
-  line-height: 1;
-  color: var(--muted);
-  cursor: pointer;
-}
-.queue-link:hover {
-  color: var(--err);
-}
-.queue-link svg {
-  width: 12px;
-  height: 12px;
-  display: block;
-}
-
 .queue-body {
   max-height: 44vh;
   overflow-y: auto;
