@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 )
@@ -81,11 +82,10 @@ func (s *server) handleUpload(w http.ResponseWriter, r *http.Request) {
 // Streams the part straight to its final location: a multi-GiB file is never
 // buffered in memory or copied twice.
 func (s *server) storeUpload(src io.Reader, original string) (string, int64, error) {
-	var token [uploadTokenBytes]byte
-	if _, err := rand.Read(token[:]); err != nil {
+	stored, err := storedName(original)
+	if err != nil {
 		return "", 0, err
 	}
-	stored := hex.EncodeToString(token[:]) + "-" + original
 
 	path := filepath.Join(s.cfg.UploadDir, stored)
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o640)
@@ -101,6 +101,36 @@ func (s *server) storeUpload(src io.Reader, original string) (string, int64, err
 		return "", 0, err
 	}
 	return stored, n, nil
+}
+
+func storedName(original string) (string, error) {
+	var token [uploadTokenBytes]byte
+	if _, err := rand.Read(token[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(token[:]) + "-" + original, nil
+}
+
+func (s *server) linkUpload(src, original string) (string, int64, error) {
+	st, err := os.Stat(src)
+	if err != nil {
+		return "", 0, err
+	}
+	if stored, err := storedName(sanitiseFilename(original)); err == nil {
+		path := filepath.Join(s.cfg.UploadDir, stored)
+		if os.Link(src, path) == nil {
+			now := time.Now()
+			_ = os.Chtimes(path, now, now)
+			return stored, st.Size(), nil
+		}
+	}
+
+	f, err := os.Open(src)
+	if err != nil {
+		return "", 0, err
+	}
+	defer f.Close()
+	return s.storeUpload(f, sanitiseFilename(original))
 }
 
 // resolveUpload maps a client-controlled upload_id back to a path inside

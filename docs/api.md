@@ -62,12 +62,14 @@ does not answer to is refused before any of this, with 403:
 | GET | `/api/presets` | yes | 200 |
 | POST | `/api/probe` | yes | 200 |
 | POST | `/api/uploads` | yes | 200 |
+| GET | `/api/files` | yes | 200 |
 | POST | `/api/jobs` | yes | 202 |
 | GET | `/api/jobs` | yes | 200 |
 | GET | `/api/jobs/{id}` | yes | 200 |
 | POST | `/api/jobs/{id}/cancel` | yes | 202 |
 | DELETE | `/api/jobs/{id}` | yes | 200 |
 | GET | `/api/jobs/{id}/download` | yes | 200 |
+| POST | `/api/jobs/{id}/reuse` | yes | 200 |
 | GET | `/api/events` | yes | 200 (SSE) |
 
 Any other path under `/api/` returns a JSON 404 with code `not_found` rather than
@@ -196,6 +198,36 @@ for a write error.
 Uploads are not garbage collected on their own. They are removed when the job
 that consumed them is deleted or swept by retention. An upload that never becomes
 a job stays on disk.
+
+### GET /api/files
+
+Lists the files this instance still holds that can be fed back into a new job:
+the output of every finished job and every source upload still on disk. Files
+shared by several jobs appear once.
+
+```json
+{"files": [
+  {"job_id": "9f1c…", "source": "output", "name": "holiday.mkv", "size": 512000, "created_at": "2026-08-18T12:57:21.442Z"},
+  {"job_id": "9f1c…", "source": "input", "name": "holiday.mov", "size": 734003200, "created_at": "2026-08-18T12:57:21.442Z"}
+]}
+```
+
+### POST /api/jobs/{id}/reuse
+
+Turns one of those files into a fresh upload without a second transfer, so the
+same bytes can be converted or compressed again.
+
+```json
+{"source": "output"}
+```
+
+The reply is the `POST /api/uploads` reply: `{"upload_id", "filename", "size"}`.
+The file is hard-linked into `UPLOAD_DIR` when both directories share a
+filesystem and copied otherwise, so deleting the original job leaves the new
+upload intact.
+
+404 `not_found` for an unknown job, 404 `file_missing` for an unknown `source`
+or a file that is no longer on disk, 500 `upload_failed` for a write error.
 
 ### POST /api/jobs
 

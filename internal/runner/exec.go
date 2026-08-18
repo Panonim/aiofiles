@@ -10,6 +10,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -33,6 +35,9 @@ const (
 	maxStderrBytes     = 4 << 10
 
 	maxSlugLen = 80
+
+	tagLen          = 2
+	maxNameAttempts = 16
 
 	// The default 64 KiB scanner limit would abort on some tools' output.
 	maxLineBytes = 1 << 20
@@ -312,24 +317,47 @@ func sanitizeName(s string) string {
 	return out
 }
 
-// uniqueOutputPath builds "<dir>/<slug>-<jobID[:8]>.<ext>".
+// uniqueOutputPath builds "<dir>/<slug>-<jobID[:2]>.<ext>", redrawing the tag
+// when a file of that name is already there: two characters keep names short
+// enough to survive being fed back in as a source, but they do collide.
 func uniqueOutputPath(dir, base, ext, jobID string) string {
 	slug := sanitizeName(base)
-	name := slug
-	if id := sanitizeName(shortID(jobID)); id != "" && id != "file" {
-		name = slug + "-" + id
+	if ext = sanitizeName(strings.TrimPrefix(ext, ".")); ext == "file" {
+		ext = ""
 	}
-	if ext = sanitizeName(strings.TrimPrefix(ext, ".")); ext != "" && ext != "file" {
-		name += "." + ext
+	tag := sanitizeName(shortID(jobID))
+	for attempt := 0; ; attempt++ {
+		name := slug
+		if tag != "" && tag != "file" {
+			name += "-" + tag
+		}
+		if ext != "" {
+			name += "." + ext
+		}
+		path := filepath.Join(dir, name)
+		if tag == "" || tag == "file" || attempt >= maxNameAttempts {
+			return path
+		}
+		if _, err := os.Stat(path); err != nil {
+			return path
+		}
+		tag = randomTag()
 	}
-	return filepath.Join(dir, name)
 }
 
 func shortID(id string) string {
-	if len(id) > 8 {
-		return id[:8]
+	if len(id) > tagLen {
+		return id[:tagLen]
 	}
 	return id
+}
+
+func randomTag() string {
+	var b [tagLen]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(b[:])[:tagLen]
 }
 
 func firstNonEmpty(vals ...string) string {

@@ -121,14 +121,14 @@ func TestUniqueOutputPath(t *testing.T) {
 		base, ext, jobID string
 		want             string
 	}{
-		{"plain", "My Video", "mp4", id, "/data/downloads/My-Video-abcdef01.mp4"},
-		{"extension with dot", "My Video", ".mkv", id, "/data/downloads/My-Video-abcdef01.mkv"},
-		{"no extension", "clip", "", id, "/data/downloads/clip-abcdef01"},
-		{"short job id", "clip", "mp4", "abc", "/data/downloads/clip-abc.mp4"},
+		{"plain", "My Video", "mp4", id, "/data/downloads/My-Video-ab.mp4"},
+		{"extension with dot", "My Video", ".mkv", id, "/data/downloads/My-Video-ab.mkv"},
+		{"no extension", "clip", "", id, "/data/downloads/clip-ab"},
+		{"short job id", "clip", "mp4", "a", "/data/downloads/clip-a.mp4"},
 		{"no job id", "clip", "mp4", "", "/data/downloads/clip.mp4"},
-		{"empty base", "", "mp4", id, "/data/downloads/file-abcdef01.mp4"},
-		{"traversal base", "../../etc/passwd", "mp4", id, "/data/downloads/etc-passwd-abcdef01.mp4"},
-		{"traversal extension", "clip", "./../sh", id, "/data/downloads/clip-abcdef01.sh"},
+		{"empty base", "", "mp4", id, "/data/downloads/file-ab.mp4"},
+		{"traversal base", "../../etc/passwd", "mp4", id, "/data/downloads/etc-passwd-ab.mp4"},
+		{"traversal extension", "clip", "./../sh", id, "/data/downloads/clip-ab.sh"},
 		// A job id that sanitises to nothing is dropped rather than spelled "file".
 		{"hostile job id", "clip", "mp4", "../../../x", "/data/downloads/clip.mp4"},
 	}
@@ -146,6 +146,26 @@ func TestUniqueOutputPath(t *testing.T) {
 				t.Errorf("output basename %q starts with a dash", filepath.Base(got))
 			}
 		})
+	}
+}
+
+func TestUniqueOutputPathAvoidsAnExistingFile(t *testing.T) {
+	dir := t.TempDir()
+	taken := uniqueOutputPath(dir, "clip", "mp4", "abcdef0123456789")
+	if filepath.Base(taken) != "clip-ab.mp4" {
+		t.Fatalf("first path = %q, want clip-ab.mp4", taken)
+	}
+	if err := os.WriteFile(taken, []byte("x"), 0o640); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	next := uniqueOutputPath(dir, "clip", "mp4", "abcdef0123456789")
+	if next == taken {
+		t.Fatalf("second path = %q, want a different tag", next)
+	}
+	base := filepath.Base(next)
+	if !strings.HasPrefix(base, "clip-") || !strings.HasSuffix(base, ".mp4") || len(base) != len("clip-ab.mp4") {
+		t.Errorf("second path = %q, want clip-<2 chars>.mp4", next)
 	}
 }
 

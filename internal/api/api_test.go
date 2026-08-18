@@ -951,3 +951,82 @@ func TestTrustedProxyIsBelievedForTheOrigin(t *testing.T) {
 		t.Errorf("status = %d, want 403 for an address even from a trusted proxy", got)
 	}
 }
+
+func TestReuseFileWithoutReuploading(t *testing.T) {
+	ts := newTestServer(t, false)
+
+	input := filepath.Join(ts.cfg.UploadDir, "00112233445566aa-clip.mp4")
+	if err := os.WriteFile(input, []byte("input bytes"), 0o640); err != nil {
+		t.Fatalf("write input: %v", err)
+	}
+	output := filepath.Join(ts.cfg.DownloadDir, "clip.mkv")
+	if err := os.WriteFile(output, []byte("output bytes"), 0o640); err != nil {
+		t.Fatalf("write output: %v", err)
+	}
+
+	job := &jobs.Job{
+		Type: jobs.TypeConvert, Title: "clip.mp4", Source: "clip.mp4",
+		InputPath: input, OutputPath: output, OutputName: "clip.mkv",
+		OutputSize: int64(len("output bytes")), Status: jobs.StatusDone,
+	}
+	if err := ts.store.Create(t.Context(), job); err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+
+	status, raw := ts.do(t, http.MethodGet, "/api/files", "")
+	if status != http.StatusOK {
+		t.Fatalf("list files = %d: %s", status, raw)
+	}
+	var listed struct {
+		Files []struct {
+			JobID  string `json:"job_id"`
+			Source string `json:"source"`
+			Name   string `json:"name"`
+			Size   int64  `json:"size"`
+		} `json:"files"`
+	}
+	if err := json.Unmarshal(raw, &listed); err != nil {
+		t.Fatalf("decode files: %v", err)
+	}
+	if len(listed.Files) != 2 {
+		t.Fatalf("files = %+v, want the output and the input", listed.Files)
+	}
+	if listed.Files[0].Source != "output" || listed.Files[0].Name != "clip.mkv" {
+		t.Errorf("first entry = %+v, want the job output", listed.Files[0])
+	}
+	if listed.Files[1].Source != "input" || listed.Files[1].Name != "clip.mp4" {
+		t.Errorf("second entry = %+v, want the job input", listed.Files[1])
+	}
+
+	status, raw = ts.do(t, http.MethodPost, "/api/jobs/"+job.ID+"/reuse", `{"source":"output"}`)
+	if status != http.StatusOK {
+		t.Fatalf("reuse = %d: %s", status, raw)
+	}
+	body := decodeBody(t, raw)
+	uploadID, _ := body["upload_id"].(string)
+	if uploadID == "" {
+		t.Fatalf("no upload id in %s", raw)
+	}
+	if body["filename"] != "clip.mkv" {
+		t.Errorf("filename = %v, want clip.mkv", body["filename"])
+	}
+	linked := filepath.Join(ts.cfg.UploadDir, uploadID)
+	got, err := os.ReadFile(linked)
+	if err != nil || string(got) != "output bytes" {
+		t.Fatalf("linked upload = %q, %v", got, err)
+	}
+
+	status, raw = ts.do(t, http.MethodPost, "/api/jobs",
+		`{"type":"compress","upload_id":"`+uploadID+`","params":{"target":"balanced"}}`)
+	if status != http.StatusAccepted {
+		t.Fatalf("create job from reused file = %d: %s", status, raw)
+	}
+	if src, _ := decodeBody(t, raw)["source"].(string); src != "clip.mkv" {
+		t.Errorf("job source = %q, want clip.mkv", src)
+	}
+
+	status, raw = ts.do(t, http.MethodPost, "/api/jobs/"+job.ID+"/reuse", `{"source":"nonsense"}`)
+	if status != http.StatusNotFound {
+		t.Errorf("reuse with a bad source = %d: %s", status, raw)
+	}
+}

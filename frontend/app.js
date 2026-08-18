@@ -561,6 +561,8 @@ function mediaApp() {
     dragging: { convert: false, compress: false },
     uploadSeq: { convert: 0, compress: 0 },
 
+    library: { open: false, tab: "", loading: false, error: "", files: [], busy: "" },
+
     forms: {
       convert: {
         container: "mp4",
@@ -1360,6 +1362,71 @@ function mediaApp() {
       }
     },
 
+    async openLibrary(tab) {
+      this.library = { open: true, tab: tab, loading: true, error: "", files: [], busy: "" };
+      try {
+        var res = await api("/files");
+        this.library.files = (res && res.files) || [];
+      } catch (e) {
+        this.library.error = e.message;
+        if (e instanceof OfflineError) this.offline = e.message;
+      } finally {
+        this.library.loading = false;
+        this.refreshIcons();
+      }
+    },
+
+    closeLibrary() {
+      this.library.open = false;
+    },
+
+    libraryPrint(file) {
+      return "job:" + file.job_id + ":" + file.source;
+    },
+
+    libraryFiles() {
+      var tab = this.library.tab;
+      var kind = this.uploadKind(tab);
+      var self = this;
+      return this.library.files.filter(function (f) {
+        if (kind && fileKind({ name: f.name }) !== kind) return false;
+        return !self.hasFingerprint(tab, self.libraryPrint(f));
+      });
+    },
+
+    async pickLibraryFile(file) {
+      var tab = this.library.tab;
+      this.library.busy = this.libraryPrint(file);
+      this.library.error = "";
+      try {
+        var res = await api("/jobs/" + file.job_id + "/reuse", {
+          method: "POST",
+          body: { source: file.source },
+        });
+        this.uploads[tab].push({
+          uid: "u" + ++this.uploadSeq[tab],
+          name: res.filename || file.name,
+          size: res.size || file.size,
+          progress: 100,
+          uploading: false,
+          error: "",
+          upload_id: res.upload_id,
+          kind: fileKind({ name: res.filename || file.name }),
+          print: this.libraryPrint(file),
+        });
+        this.formError[tab] = "";
+        this.errors[tab] = {};
+        this.closeLibrary();
+        this.syncKindOptions(tab);
+      } catch (e) {
+        this.library.error = e.message;
+        if (e instanceof OfflineError) this.offline = e.message;
+      } finally {
+        this.library.busy = "";
+        this.refreshIcons();
+      }
+    },
+
     removeUpload(tab, uid) {
       var arr = this.uploads[tab];
       for (var i = 0; i < arr.length; i++) {
@@ -1849,6 +1916,18 @@ function mediaApp() {
 
     jobSettled(job) {
       return !!job && !isActive(job);
+    },
+
+    /* Once a job has produced a file, that file's name is what identifies it;
+       the name it started from moves to the line below. */
+    jobName(job) {
+      return (job && (job.output_name || job.title || job.source || job.id)) || "";
+    },
+
+    jobOrigin(job) {
+      if (!job || !job.output_name) return "";
+      var from = job.source || job.title || "";
+      return from === job.output_name ? "" : from;
     },
 
     queueStatusLine(job) {

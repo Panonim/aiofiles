@@ -1840,6 +1840,14 @@ th.num {
   .queue-body {
     max-height: 38vh;
   }
+
+  /* No progress ping on a phone: the Jobs tab is one tap away, and a dock that
+     sits over the thumb zone for the length of an encode is worse than useless.
+     The save card is not a status ping, so it stays. */
+  .queue-pill,
+  .queue-card:not(.save-card) {
+    display: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2000,4 +2008,43 @@ select.flash-b ~ .xsel-btn {
 .preview-body audio {
   width: min(92vw, 420px);
   margin: var(--sp-6) var(--sp-4);
+}
+
+/* Sits in the panel header opposite its eyebrow, so it keeps the same place
+   whether the dropzone or a file list is below it. */
+.library-open {
+  margin-left: auto;
+}
+
+.library-card {
+  width: min(92vw, 520px);
+}
+
+.library-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-4);
+  overflow-y: auto;
+}
+
+.library-item {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.library-item:hover {
+  border-color: var(--focus);
+  background: var(--focus-soft);
+}
+.library-item[disabled] {
+  opacity: 0.6;
+  cursor: default;
+}
+.library-item .file-body,
+.library-item .file-name {
+  display: block;
 }

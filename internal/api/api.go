@@ -96,12 +96,14 @@ func (s *server) routes() http.Handler {
 	handle("GET /api/presets", s.handlePresets)
 	handle("POST /api/probe", s.handleProbe)
 	handle("POST "+uploadsPath, s.handleUpload)
+	handle("GET /api/files", s.handleListFiles)
 	handle("POST /api/jobs", s.handleCreateJob)
 	handle("GET /api/jobs", s.handleListJobs)
 	handle("GET /api/jobs/{id}", s.handleGetJob)
 	handle("POST /api/jobs/{id}/cancel", s.handleCancelJob)
 	handle("DELETE /api/jobs/{id}", s.handleDeleteJob)
 	handle("GET /api/jobs/{id}/download", s.handleDownload)
+	handle("POST /api/jobs/{id}/reuse", s.handleReuseFile)
 	handle("GET /api/events", s.handleEvents)
 
 	// Unknown API paths answer in JSON rather than net/http's plain text.

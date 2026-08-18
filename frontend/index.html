@@ -509,7 +509,17 @@
           x-show="jobType === 'convert'"
           x-on:submit.prevent="submit('convert')"
         >
-          <div class="panel-head"><span class="eyebrow">Source file</span></div>
+          <div class="panel-head">
+            <span class="eyebrow">Source file</span>
+            <button
+              type="button"
+              class="btn btn-sm btn-quiet library-open"
+              x-on:click="openLibrary('convert')"
+            >
+              <i data-lucide="history"></i>
+              <span>Reuse a file</span>
+            </button>
+          </div>
           <div class="panel-body">
             <template x-if="!uploads.convert.length">
               <label
@@ -581,6 +591,7 @@
                 </div>
               </div>
             </template>
+
 
             <div
               class="field-grid"
@@ -978,7 +989,17 @@
           x-show="jobType === 'compress'"
           x-on:submit.prevent="submit('compress')"
         >
-          <div class="panel-head"><span class="eyebrow">Source file</span></div>
+          <div class="panel-head">
+            <span class="eyebrow">Source file</span>
+            <button
+              type="button"
+              class="btn btn-sm btn-quiet library-open"
+              x-on:click="openLibrary('compress')"
+            >
+              <i data-lucide="history"></i>
+              <span>Reuse a file</span>
+            </button>
+          </div>
           <div class="panel-body">
             <template x-if="!uploads.compress.length">
               <label
@@ -1050,6 +1071,7 @@
                 </div>
               </div>
             </template>
+
 
             <div class="field-grid" style="margin-top: 16px" x-show="uploadKind('compress')" x-cloak>
               <div class="field field-wide">
@@ -1415,11 +1437,11 @@
                   type="checkbox"
                   x-bind:checked="!!picked[job.id]"
                   x-on:change="togglePick(job.id)"
-                  x-bind:aria-label="'Select ' + (job.title || job.id)"
+                  x-bind:aria-label="'Select ' + jobName(job)"
                 />
               </label>
               <div class="job-main">
-                <div class="job-title truncate" x-text="job.title || job.source || job.id"></div>
+                <div class="job-title truncate" x-text="jobName(job)"></div>
                 <!-- Two ranked groups: what state it is in, then what it made.
                      Stacked on a phone, side by side once there is room. -->
                 <div class="job-sub">
@@ -1430,11 +1452,11 @@
                   <span class="sep" x-show="jobStage(job) && job.status === 'running'">·</span>
                   <span x-show="jobStage(job) && job.status === 'running'" x-text="jobStage(job)"></span>
                 </div>
-                <div class="job-out" x-show="job.output_name || job.expires_at">
-                  <span class="truncate" x-show="job.output_name" x-text="job.output_name"></span>
-                  <span class="sep" x-show="job.output_name && job.output_size">·</span>
+                <div class="job-out" x-show="jobOrigin(job) || job.output_size || job.expires_at">
+                  <span class="truncate" x-show="jobOrigin(job)" x-text="'from ' + jobOrigin(job)"></span>
+                  <span class="sep" x-show="jobOrigin(job) && job.output_size">·</span>
                   <span x-show="job.output_size" x-text="bytes(job.output_size)"></span>
-                  <span class="sep" x-show="job.expires_at && (job.output_name || job.output_size)">·</span>
+                  <span class="sep" x-show="job.expires_at && (jobOrigin(job) || job.output_size)">·</span>
                   <span x-show="job.expires_at" x-bind:title="absolute(job.expires_at)" x-text="retentionLabel(job)"></span>
                 </div>
                 <p class="job-error" x-show="job.status === 'failed' && job.error">
@@ -1463,7 +1485,7 @@
                   class="btn btn-sm btn-quiet btn-icon"
                   x-show="canPreview(job)"
                   x-on:click="openPreview(job)"
-                  x-bind:aria-label="'Preview ' + (job.title || job.id)"
+                  x-bind:aria-label="'Preview ' + jobName(job)"
                 >
                   <i data-lucide="eye"></i>
                   <span class="btn-label">Preview</span>
@@ -1484,7 +1506,7 @@
                   type="button"
                   class="btn btn-sm btn-quiet btn-icon btn-danger"
                   x-on:click="deleteJob(job)"
-                  x-bind:aria-label="'Delete ' + (job.title || job.id)"
+                  x-bind:aria-label="'Delete ' + jobName(job)"
                 >
                   <i data-lucide="trash-2"></i>
                   <span class="btn-label">Delete</span>
@@ -1498,7 +1520,7 @@
                 x-bind:aria-valuenow="job.status === 'running' && jobProgress(job) >= 0 ? Math.round(jobProgress(job)) : null"
                 aria-valuemin="0"
                 aria-valuemax="100"
-                x-bind:aria-label="'Progress for ' + (job.title || job.id)"
+                x-bind:aria-label="'Progress for ' + jobName(job)"
               >
                 <span x-bind:style="railWidth(job) ? 'width:' + railWidth(job) : ''"></span>
               </div>
@@ -1746,8 +1768,7 @@
             <div class="queue-item" x-bind:data-status="job.status">
               <span class="queue-icon"><i x-bind:data-lucide="typeIcon(job.type)"></i></span>
               <div class="queue-main">
-                <div class="queue-title truncate"
-                  x-text="job.title || job.output_name || job.source || job.id"></div>
+                <div class="queue-title truncate" x-text="jobName(job)"></div>
                 <div
                   class="bar"
                   x-show="!jobSettled(job)"
@@ -1831,6 +1852,53 @@
             controls
             autoplay
           ></audio>
+        </div>
+      </div>
+    </div>
+
+    <div
+      class="preview"
+      x-show="library.open"
+      x-cloak
+      x-transition.opacity.duration.150ms
+      x-on:keydown.escape.window="closeLibrary()"
+      x-on:click.self="closeLibrary()"
+    >
+      <div class="preview-card library-card" x-show="library.open" x-transition.scale.95.duration.150ms>
+        <div class="preview-head">
+          <span class="preview-title">Files already on the server</span>
+          <button type="button" class="btn btn-quiet btn-icon" x-on:click="closeLibrary()" aria-label="Close file list">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+        <div class="library-body">
+          <p class="hint" x-show="library.loading">Loading...</p>
+          <p class="inline-error" x-show="library.error">
+            <i data-lucide="alert-circle"></i>
+            <span x-text="library.error"></span>
+          </p>
+          <p class="hint" x-show="!library.loading && !libraryFiles().length">
+            Nothing to reuse yet - finished jobs and their sources show up here.
+          </p>
+          <template x-for="f in libraryFiles()" :key="f.job_id + f.source">
+            <button
+              type="button"
+              class="file-card library-item"
+              x-bind:disabled="library.busy === libraryPrint(f)"
+              x-on:click="pickLibraryFile(f)"
+            >
+              <span class="file-icon">
+                <i x-bind:data-lucide="f.source === 'output' ? 'file-check' : 'file-input'"></i>
+              </span>
+              <span class="file-body">
+                <span class="file-name truncate" x-text="f.name"></span>
+                <span class="mono muted">
+                  <span x-text="bytes(f.size)"></span>
+                  <span x-text="f.source === 'output' ? ' · result' : ' · source'"></span>
+                </span>
+              </span>
+            </button>
+          </template>
         </div>
       </div>
     </div>
