@@ -33,7 +33,7 @@ func (s *server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	typ := jobs.Type(strings.TrimSpace(req.Type))
 	if !typ.Valid() {
 		writeValidationError(w, &presets.ValidationError{
-			Field: "type", Reason: "must be download, convert, compress or image",
+			Field: "type", Reason: "must be download, convert, compress, image or edit",
 		})
 		return
 	}
@@ -124,6 +124,12 @@ func parseParams(typ jobs.Type, raw json.RawMessage, defaultRetention int) (any,
 		return p, p.RetentionDays, nil
 	case jobs.TypeImage:
 		p, err := presets.ParseImage(raw, defaultRetention)
+		if err != nil {
+			return nil, 0, err
+		}
+		return p, p.RetentionDays, nil
+	case jobs.TypeEdit:
+		p, err := presets.ParseEdit(raw, defaultRetention)
 		if err != nil {
 			return nil, 0, err
 		}

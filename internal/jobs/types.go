@@ -17,11 +17,12 @@ const (
 	TypeConvert  Type = "convert"  // ffmpeg, format/codec change
 	TypeCompress Type = "compress" // ffmpeg, size reduction
 	TypeImage    Type = "image"    // ImageMagick
+	TypeEdit     Type = "edit"     // ffmpeg, trim and crop
 )
 
 func (t Type) Valid() bool {
 	switch t {
-	case TypeDownload, TypeConvert, TypeCompress, TypeImage:
+	case TypeDownload, TypeConvert, TypeCompress, TypeImage, TypeEdit:
 		return true
 	}
 	return false

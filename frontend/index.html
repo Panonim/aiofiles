@@ -1490,6 +1490,16 @@
                   <i data-lucide="eye"></i>
                   <span class="btn-label">Preview</span>
                 </button>
+                <button
+                  type="button"
+                  class="btn btn-sm btn-quiet btn-icon"
+                  x-show="canEdit(job)"
+                  x-on:click="openEditor(job)"
+                  x-bind:aria-label="'Trim or crop ' + jobName(job)"
+                >
+                  <i data-lucide="scissors"></i>
+                  <span class="btn-label">Edit</span>
+                </button>
                 <!-- href stays for long-press and new tab; downloadJob only
                      steps in where following it would unload an installed app. -->
                 <a
@@ -1853,6 +1863,149 @@
             autoplay
           ></audio>
         </div>
+      </div>
+    </div>
+
+    <!-- editor - trim and crop on top of a finished file. Everything inside is
+         built on open so the player and the crop box start from nothing. -->
+    <div
+      class="preview"
+      x-show="editor"
+      x-cloak
+      x-transition.opacity.duration.150ms
+      x-on:keydown.escape.window="closeEditor()"
+      x-on:click.self="closeEditor()"
+    >
+      <div class="preview-card editor-card" x-show="editor" x-transition.scale.95.duration.150ms>
+        <template x-if="editor">
+          <div class="editor-inner">
+            <div class="preview-head">
+              <span class="preview-title truncate" x-text="editor.job.output_name || editor.job.title"></span>
+              <button type="button" class="btn btn-quiet btn-icon" x-on:click="closeEditor()" aria-label="Close editor">
+                <i data-lucide="x"></i>
+              </button>
+            </div>
+
+            <div class="editor-body">
+              <div
+                class="ed-frame"
+                x-ref="edFrame"
+                x-bind:class="editor.kind === 'audio' ? 'is-audio' : ''"
+                x-bind:style="editor.kind === 'audio' ? '' : editFrame()"
+              >
+                <!-- No native controls: their bar sits exactly where the crop
+                     box is dragged. Play, scrub and trim are all below. -->
+                <video
+                  x-ref="edMedia"
+                  x-bind:src="editor.url"
+                  playsinline
+                  x-on:loadedmetadata="editorReady($event)"
+                  x-on:timeupdate="editorTick($event)"
+                  x-on:play="editor.playing = true"
+                  x-on:pause="editor.playing = false"
+                  x-on:waiting="editor.loading = true"
+                  x-on:canplay="editor.loading = false"
+                  x-on:playing="editor.loading = false"
+                  x-on:click="togglePlay()"
+                ></video>
+                <div class="ed-busy" x-show="editor.loading">
+                  <span class="spin"><i data-lucide="loader-circle"></i></span>
+                </div>
+                <div
+                  class="ed-crop"
+                  x-show="editor.cropOn"
+                  x-bind:style="cropStyle()"
+                  x-on:pointerdown="dragCrop('move', $event)"
+                >
+                  <span class="ed-grip nw" x-on:pointerdown="dragCrop('nw', $event)"></span>
+                  <span class="ed-grip ne" x-on:pointerdown="dragCrop('ne', $event)"></span>
+                  <span class="ed-grip sw" x-on:pointerdown="dragCrop('sw', $event)"></span>
+                  <span class="ed-grip se" x-on:pointerdown="dragCrop('se', $event)"></span>
+                </div>
+              </div>
+
+              <!-- The handles own their own drags; the bare track scrubs. -->
+              <div class="ed-track" x-ref="edTrack" x-on:pointerdown="scrubDown($event)">
+                <span
+                  class="ed-keep"
+                  x-bind:style="'left:' + pct(editor.start / (editor.duration || 1)) + ';right:' + pct(1 - editor.end / (editor.duration || 1))"
+                ></span>
+                <span class="ed-head" x-bind:style="'left:' + pct(editor.at / (editor.duration || 1))"></span>
+                <span
+                  class="ed-handle"
+                  x-bind:style="'left:' + pct(editor.start / (editor.duration || 1))"
+                  x-on:pointerdown="trimDown('start', $event)"
+                ></span>
+                <span
+                  class="ed-handle"
+                  x-bind:style="'left:' + pct(editor.end / (editor.duration || 1))"
+                  x-on:pointerdown="trimDown('end', $event)"
+                ></span>
+              </div>
+
+              <div class="ed-times mono">
+                <button
+                  type="button"
+                  class="btn btn-sm btn-quiet btn-icon ed-play"
+                  x-on:click="togglePlay()"
+                  x-bind:aria-label="editor.playing ? 'Pause' : 'Play'"
+                >
+                  <!-- Both icons are drawn once and swapped in CSS: lucide
+                       replaces the <i> node, which would drop a binding on it. -->
+                  <span class="ed-play-ico" x-bind:class="editor.playing ? 'is-playing' : ''">
+                    <i data-lucide="play"></i>
+                    <i data-lucide="pause"></i>
+                  </span>
+                </button>
+                <span class="ed-stat">
+                  <span class="ed-stat-k">in</span>
+                  <span class="mono" x-text="editTime(editor.start)"></span>
+                </span>
+                <span class="ed-stat">
+                  <span class="ed-stat-k">out</span>
+                  <span class="mono" x-text="editTime(editor.end)"></span>
+                </span>
+                <span class="ed-stat is-kept">
+                  <span class="ed-stat-k">kept</span>
+                  <span class="mono" x-text="editTime(editSpan())"></span>
+                </span>
+              </div>
+
+              <p class="inline-error" x-show="editor.error">
+                <i data-lucide="alert-circle"></i>
+                <span x-text="editor.error"></span>
+              </p>
+
+              <div class="ed-foot">
+                <button
+                  type="button"
+                  class="btn btn-sm"
+                  x-show="editorCanCrop()"
+                  x-bind:aria-pressed="editor.cropOn ? 'true' : 'false'"
+                  x-on:click="toggleCrop()"
+                >
+                  <i data-lucide="crop"></i> Crop
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-sm btn-quiet ed-reset"
+                  x-on:click="resetEditor()"
+                >
+                  Reset
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-sm btn-primary"
+                  x-bind:disabled="!editReady()"
+                  x-on:click="submitEdit()"
+                >
+                  <i data-lucide="check"></i>
+                  <span x-text="editor.busy ? 'Queueing...' : 'Create job'"></span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </template>
       </div>
     </div>
 
