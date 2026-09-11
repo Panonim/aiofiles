@@ -1143,9 +1143,9 @@ th.num {
   display: block;
   font-size: var(--fs-micro);
 }
-/* Echoes the queue flyout's own bar, so a running job reads the same way
-   whether it is watched from the card or the docked queue. */
+
 .telemetry .bar {
+  display: none;
   margin-top: 5px;
 }
 
@@ -1301,8 +1301,8 @@ th.num {
   position: relative;
   z-index: 1;
   grid-area: 1 / 1;
-  width: 13px;
-  height: 13px;
+  width: 16px;
+  height: 16px;
   display: block;
 }
 .queue-ring > * {
@@ -1798,8 +1798,9 @@ th.num {
     align-items: baseline;
     gap: var(--sp-2);
   }
-  /* The card-bottom rail would just repeat this bar; one progress
-     indicator per running job is plenty. */
+  .telemetry .bar {
+    display: block;
+  }
   .job[data-status="running"] .job-rail {
     display: none;
   }
@@ -2246,6 +2247,11 @@ select.flash-b ~ .xsel-btn {
 .btn[aria-pressed="true"] {
   border-color: var(--ink);
   background: var(--ink);
+  color: var(--ink-text);
+}
+.btn[aria-pressed="true"]:hover:not(:disabled) {
+  border-color: var(--ink-hover);
+  background: var(--ink-hover);
   color: var(--ink-text);
 }
 
