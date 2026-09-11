@@ -2048,3 +2048,212 @@ select.flash-b ~ .xsel-btn {
 .library-item .file-name {
   display: block;
 }
+
+/* editor - trim and crop */
+
+.editor-card {
+  width: min(94vw, 760px);
+}
+
+.editor-inner {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.editor-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.ed-frame {
+  position: relative;
+  width: 100%;
+  margin-inline: auto;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: #000;
+}
+.ed-frame video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+/* Nothing to show for an audio file - the track below is the whole editor. */
+.ed-frame.is-audio {
+  height: 0;
+  background: transparent;
+}
+
+.ed-busy {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  pointer-events: none;
+}
+.ed-busy svg {
+  width: 28px;
+  height: 28px;
+}
+
+/* The spread shadow dims everything outside the box; the frame clips it. */
+.ed-crop {
+  position: absolute;
+  touch-action: none;
+  cursor: move;
+  border: 1px solid #fff;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+}
+/* Corner brackets rather than dots: they show which edges a grip moves, and
+   the ::before widens the target well past the ink for a fingertip. */
+.ed-grip {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border: 3px solid #fff;
+  touch-action: none;
+}
+.ed-grip::before {
+  content: "";
+  position: absolute;
+  inset: -12px;
+}
+.ed-grip.nw { left: -2px; top: -2px; border-right: 0; border-bottom: 0; cursor: nwse-resize; }
+.ed-grip.ne { right: -2px; top: -2px; border-left: 0; border-bottom: 0; cursor: nesw-resize; }
+.ed-grip.sw { left: -2px; bottom: -2px; border-right: 0; border-top: 0; cursor: nesw-resize; }
+.ed-grip.se { right: -2px; bottom: -2px; border-left: 0; border-top: 0; cursor: nwse-resize; }
+
+.ed-track {
+  position: relative;
+  height: 38px;
+  margin-inline: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-3);
+  touch-action: none;
+  cursor: pointer;
+}
+.ed-keep {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--focus-soft);
+}
+.ed-head {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--run);
+}
+.ed-handle {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 12px;
+  margin-left: -6px;
+  border-radius: 3px;
+  background: var(--ink);
+  cursor: ew-resize;
+  touch-action: none;
+}
+/* An invisible skirt, so the grab area is a thumb wide without the bar being. */
+.ed-handle::before {
+  content: "";
+  position: absolute;
+  inset: -4px -9px;
+}
+/* A hairline down the middle reads as a grip without another element. */
+.ed-handle::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  bottom: 12px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--surface);
+}
+
+.ed-times {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+
+.ed-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px var(--sp-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.ed-stat .mono {
+  color: var(--text);
+}
+.ed-stat-k {
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* The length is what the user is actually choosing, so it leads. */
+.ed-stat.is-kept {
+  margin-left: auto;
+  border-color: var(--line-strong);
+}
+.ed-stat.is-kept .mono {
+  font-weight: 600;
+}
+
+.ed-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.ed-play-ico {
+  display: inline-flex;
+}
+.ed-play-ico > :nth-child(2) {
+  display: none;
+}
+.ed-play-ico.is-playing > :nth-child(1) {
+  display: none;
+}
+.ed-play-ico.is-playing > :nth-child(2) {
+  display: inline-block;
+}
+.ed-reset {
+  margin-left: auto;
+}
+.btn[aria-pressed="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--ink-text);
+}
+
+@media (max-width: 560px) {
+  .ed-stat {
+    padding: 3px 6px;
+  }
+  .ed-times {
+    gap: 6px;
+  }
+}

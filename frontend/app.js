@@ -32,7 +32,44 @@ var TYPE_ICON = {
   convert: "repeat",
   compress: "minimize-2",
   image: "image",
+  edit: "scissors",
 };
+
+/* Smallest the crop box may be pinched to, as a fraction of the frame. */
+var CROP_MIN = 0.05;
+
+function clamp(v, lo, hi) {
+  return v < lo ? lo : v > hi ? hi : v;
+}
+
+/* Applies one drag to the crop box. `mode` is "move" or a compass corner, and
+   every value is a fraction of the frame, so the player's size never matters. */
+function cropDrag(c, mode, dx, dy) {
+  if (mode === "move") {
+    return {
+      x: clamp(c.x + dx, 0, 1 - c.w),
+      y: clamp(c.y + dy, 0, 1 - c.h),
+      w: c.w,
+      h: c.h,
+    };
+  }
+  var l = c.x,
+    t = c.y,
+    r = c.x + c.w,
+    b = c.y + c.h;
+  if (mode.indexOf("w") !== -1) l = clamp(l + dx, 0, r - CROP_MIN);
+  if (mode.indexOf("e") !== -1) r = clamp(r + dx, l + CROP_MIN, 1);
+  if (mode.indexOf("n") !== -1) t = clamp(t + dy, 0, b - CROP_MIN);
+  if (mode.indexOf("s") !== -1) b = clamp(b + dy, t + CROP_MIN, 1);
+  return { x: l, y: t, w: r - l, h: b - t };
+}
+
+function clockTime(sec) {
+  var s = Math.max(0, Number(sec) || 0);
+  var m = Math.floor(s / 60);
+  var rest = s - m * 60;
+  return m + ":" + (rest < 10 ? "0" : "") + rest.toFixed(1);
+}
 
 /* The two axes the URL carries: "#jobs", "#new/compress". These are tabs, not
    wire job types - Convert and Compress both send an "image" job for images. */
@@ -151,6 +188,7 @@ var TYPE_LABEL = {
   convert: "Convert",
   compress: "Compress",
   image: "Image",
+  edit: "Edit",
 };
 
 /* Queued and running are the states still in play; the rest are terminal. */
@@ -528,6 +566,8 @@ function mediaApp() {
     save: emptySave(),
     /* The open preview overlay: null when closed, else {job, kind, url}. */
     preview: null,
+    /* The open trim/crop editor: null when closed. */
+    editor: null,
 
     submitting: "",
     /* Keyed by tab: an image job from either file tab reports its errors
@@ -2017,6 +2057,280 @@ function mediaApp() {
       this.preview = null;
     },
 
+    /* Trimming a still makes no sense, and cropping one is the Convert tab's job. */
+    canEdit(job) {
+      return (
+        job.status === "done" &&
+        !!job.output_name &&
+        this.mediaKind(job) !== "image"
+      );
+    },
+
+    openEditor(job) {
+      this.editor = {
+        job: job,
+        kind: this.mediaKind(job),
+        url: this.downloadUrl(job),
+        duration: 0,
+        start: 0,
+        end: 0,
+        at: 0,
+        cropOn: false,
+        playing: false,
+        loading: true,
+        crop: { x: 0, y: 0, w: 1, h: 1 },
+        natural: { w: 0, h: 0 },
+        busy: false,
+        error: "",
+      };
+      this.refreshIcons();
+    },
+
+    closeEditor() {
+      this.editor = null;
+    },
+
+    /* The player is the only thing that knows the real length and frame size. */
+    editorReady(ev) {
+      if (!this.editor) return;
+      var el = ev.target;
+      this.editor.duration = isFinite(el.duration) ? el.duration : 0;
+      this.editor.end = this.editor.duration;
+      this.editor.natural = { w: el.videoWidth || 0, h: el.videoHeight || 0 };
+    },
+
+    /* The player runs the whole file; only the cut is worth previewing, so
+       playback is held inside it. Each correction lands on the boundary itself,
+       so the next tick cannot bounce off it again. */
+    editorTick(ev) {
+      var e = this.editor;
+      if (!e) return;
+      var el = ev.target;
+      if (e.end > 0 && el.currentTime > e.end) {
+        el.pause();
+        el.currentTime = e.end;
+      } else if (el.currentTime < e.start) {
+        el.currentTime = e.start;
+      }
+      e.at = el.currentTime;
+    },
+
+    togglePlay() {
+      var el = this.$refs.edMedia;
+      var e = this.editor;
+      if (!el) return;
+      if (!el.paused) {
+        el.pause();
+        return;
+      }
+      if (el.currentTime < e.start || el.currentTime >= e.end - 0.05) {
+        this.seekEditor(e.start);
+      }
+      el.play();
+    },
+
+    editorCanCrop() {
+      return !!(this.editor && this.editor.natural.w && this.editor.kind === "video");
+    },
+
+    toggleCrop() {
+      var e = this.editor;
+      e.cropOn = !e.cropOn;
+      if (e.cropOn && e.crop.w > 0.99 && e.crop.h > 0.99) {
+        e.crop = { x: 0.1, y: 0.1, w: 0.8, h: 0.8 };
+      }
+    },
+
+    resetEditor() {
+      var e = this.editor;
+      e.start = 0;
+      e.end = e.duration;
+      e.crop = { x: 0, y: 0, w: 1, h: 1 };
+      e.cropOn = false;
+      this.seekEditor(0);
+    },
+
+    editFrame() {
+      var e = this.editor;
+      var ratio = e && e.natural.w ? e.natural.w / e.natural.h : 16 / 9;
+      /* Caps the height without letterboxing: the crop box only maps onto the
+         source while the picture fills the frame exactly. */
+      return (
+        "aspect-ratio:" + ratio +
+        ";max-width:min(100%, calc(52vh * " + ratio + "))"
+      );
+    },
+
+    pct(v) {
+      return (clamp(v, 0, 1) * 100).toFixed(3) + "%";
+    },
+
+    cropStyle() {
+      var c = this.editor.crop;
+      return (
+        "left:" + this.pct(c.x) + ";top:" + this.pct(c.y) +
+        ";width:" + this.pct(c.w) + ";height:" + this.pct(c.h)
+      );
+    },
+
+    editTime(sec) {
+      return clockTime(sec);
+    },
+
+    editSpan() {
+      var e = this.editor;
+      return e ? Math.max(0, e.end - e.start) : 0;
+    },
+
+    /* Something has to change, or the job would just copy the file back. */
+    editReady() {
+      var e = this.editor;
+      if (!e || !e.duration || e.busy) return false;
+      var cropped = e.cropOn && (e.crop.w < 0.999 || e.crop.h < 0.999);
+      return cropped || e.start > 0.05 || e.end < e.duration - 0.05;
+    },
+
+    /* Shared by the handles and the scrubber: the pointer is followed on the
+       element it went down on, so a finger that slides off the track keeps
+       dragging what it grabbed. */
+    trackDrag(ev, onTime) {
+      var e = this.editor;
+      if (!e || !e.duration) return;
+      ev.preventDefault();
+      var el = ev.currentTarget;
+      var track = this.$refs.edTrack;
+      var at = function (clientX) {
+        var r = track.getBoundingClientRect();
+        return clamp((clientX - r.left) / r.width, 0, 1) * e.duration;
+      };
+      var move = function (m) {
+        onTime(at(m.clientX));
+      };
+      var up = function () {
+        el.removeEventListener("pointermove", move);
+        el.removeEventListener("pointerup", up);
+        el.removeEventListener("pointercancel", up);
+      };
+      el.setPointerCapture(ev.pointerId);
+      el.addEventListener("pointermove", move);
+      el.addEventListener("pointerup", up);
+      el.addEventListener("pointercancel", up);
+      onTime(at(ev.clientX));
+    },
+
+    trimDown(which, ev) {
+      ev.stopPropagation(); // or the track would scrub underneath the handle
+      var self = this;
+      this.trackDrag(ev, function (t) {
+        self.setTrim(which, t);
+      });
+    },
+
+    scrubDown(ev) {
+      var self = this;
+      this.trackDrag(ev, function (t) {
+        self.seekEditor(clamp(t, self.editor.start, self.editor.end));
+      });
+    },
+
+    setTrim(which, t) {
+      var e = this.editor;
+      var gap = Math.min(0.2, e.duration / 20);
+      if (which === "start") e.start = clamp(t, 0, e.end - gap);
+      else e.end = clamp(t, e.start + gap, e.duration);
+      this.seekEditor(which === "start" ? e.start : e.end);
+    },
+
+    seekEditor(t) {
+      var el = this.$refs.edMedia;
+      if (!el) return;
+      this.editor.at = t; // a paused player reports the move only on `seeked`
+      try {
+        el.currentTime = t;
+      } catch (err) {} // a source still loading its index refuses the seek
+    },
+
+    dragCrop(mode, ev) {
+      var e = this.editor;
+      if (!e) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      var box = this.$refs.edFrame.getBoundingClientRect();
+      var from = { x: e.crop.x, y: e.crop.y, w: e.crop.w, h: e.crop.h };
+      var ox = ev.clientX;
+      var oy = ev.clientY;
+      var el = ev.currentTarget;
+      var move = function (m) {
+        e.crop = cropDrag(
+          from,
+          mode,
+          (m.clientX - ox) / box.width,
+          (m.clientY - oy) / box.height,
+        );
+      };
+      var up = function () {
+        el.removeEventListener("pointermove", move);
+        el.removeEventListener("pointerup", up);
+        el.removeEventListener("pointercancel", up);
+      };
+      el.setPointerCapture(ev.pointerId);
+      el.addEventListener("pointermove", move);
+      el.addEventListener("pointerup", up);
+      el.addEventListener("pointercancel", up);
+    },
+
+    /* The box is kept as fractions; ffmpeg wants source pixels. */
+    editParams() {
+      var e = this.editor;
+      var c = e.crop;
+      var round3 = function (v) {
+        return Math.round(v * 1000) / 1000;
+      };
+      var p = {
+        start: round3(e.start),
+        end: e.end >= e.duration - 0.05 ? 0 : round3(e.end),
+      };
+      if (e.cropOn && e.natural.w && (c.w < 0.999 || c.h < 0.999)) {
+        p.crop_x = Math.round(c.x * e.natural.w);
+        p.crop_y = Math.round(c.y * e.natural.h);
+        p.crop_w = Math.min(Math.round(c.w * e.natural.w), e.natural.w - p.crop_x);
+        p.crop_h = Math.min(Math.round(c.h * e.natural.h), e.natural.h - p.crop_y);
+      }
+      return p;
+    },
+
+    /* The source is the finished file, so it is relinked as an upload first. */
+    async submitEdit() {
+      var e = this.editor;
+      if (!e || e.busy) return;
+      e.busy = true;
+      e.error = "";
+      try {
+        var reused = await api("/jobs/" + e.job.id + "/reuse", {
+          method: "POST",
+          body: { source: "output" },
+        });
+        var job = await api("/jobs", {
+          method: "POST",
+          body: {
+            type: "edit",
+            upload_id: reused.upload_id,
+            params: this.editParams(),
+          },
+        });
+        this.upsertJob(job);
+        this.enqueue(job.id);
+        this.announce = "Edit job queued.";
+        this.closeEditor();
+      } catch (err) {
+        if (err instanceof OfflineError) this.offline = err.message;
+        e.error = err.message;
+      } finally {
+        if (this.editor) this.editor.busy = false;
+        this.refreshIcons();
+      }
+    },
+
     /* Only where a plain <a download> would strand the user: see isStandalone.
        Everywhere else the anchor is left alone. */
     managedSave() {
@@ -2203,6 +2517,7 @@ function mediaApp() {
       delete this.live[id];
       this.dismissFromQueue(id);
       if (this.preview && this.preview.job.id === id) this.closePreview();
+      if (this.editor && this.editor.job.id === id) this.closeEditor();
     },
 
     /* Back in the foreground. A suspended app keeps an EventSource that still

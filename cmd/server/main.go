@@ -84,6 +84,7 @@ func run() error {
 	queue.Register(jobs.TypeConvert, ffmpeg)
 	queue.Register(jobs.TypeCompress, ffmpeg)
 	queue.Register(jobs.TypeImage, image)
+	queue.Register(jobs.TypeEdit, ffmpeg)
 	if n, err := queue.Resume(ctx); err != nil {
 		log.Warn("resume queued jobs", "err", err)
 	} else if n > 0 {
