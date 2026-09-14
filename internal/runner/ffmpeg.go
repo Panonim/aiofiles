@@ -16,7 +16,7 @@ import (
 	"aiofiles/internal/presets"
 )
 
-// FFmpeg serves both TypeConvert and TypeCompress jobs.
+// FFmpeg serves the TypeConvert, TypeCompress and TypeEdit jobs.
 type FFmpeg struct {
 	cfg *config.Config
 	log *slog.Logger
@@ -97,6 +97,10 @@ func (r *FFmpeg) Run(ctx context.Context, j *jobs.Job, emit jobs.Emit) (jobs.Res
 		return res, errors.New("ffmpeg: input path is a directory")
 	}
 
+	if j.Type == jobs.TypeEdit {
+		return r.runEdit(ctx, j, input, emit)
+	}
+
 	spec, err := r.specFor(j)
 	if err != nil {
 		return res, err
@@ -151,7 +155,7 @@ func (r *FFmpeg) Run(ctx context.Context, j *jobs.Job, emit jobs.Emit) (jobs.Res
 
 func (r *FFmpeg) runOnePass(ctx context.Context, input, output string, s encodeSpec, duration float64, emit jobs.Emit) error {
 	emitStage(emit, s.Stage)
-	return r.encode(ctx, input, output, s, &ffProgress{duration: duration, stage: s.Stage}, emit)
+	return r.encode(ctx, ffmpegArgs(input, output, s), &ffProgress{duration: duration, stage: s.Stage}, emit)
 }
 
 // runTwoPass drives the bitrate-targeted encode. Pass 1 only writes the analysis
@@ -177,7 +181,7 @@ func (r *FFmpeg) runTwoPass(ctx context.Context, j *jobs.Job, input, output stri
 		s.Pass = p.pass
 		emitPercent(emit, p.stage, p.base)
 		prog := &ffProgress{duration: duration, stage: p.stage, base: p.base, span: 50}
-		if err := r.encode(ctx, input, p.output, s, prog, emit); err != nil {
+		if err := r.encode(ctx, ffmpegArgs(input, p.output, s), prog, emit); err != nil {
 			return err
 		}
 	}
@@ -185,15 +189,121 @@ func (r *FFmpeg) runTwoPass(ctx context.Context, j *jobs.Job, input, output stri
 }
 
 // encode runs one ffmpeg invocation, forwarding its -progress block as updates.
-func (r *FFmpeg) encode(ctx context.Context, input, output string, s encodeSpec, prog *ffProgress, emit jobs.Emit) error {
+func (r *FFmpeg) encode(ctx context.Context, args []string, prog *ffProgress, emit jobs.Emit) error {
 	onLine := func(line string) {
 		if p, ok := prog.line(line); ok && emit != nil {
 			emit(p)
 		}
 	}
-	return runProc(ctx, r.log, r.cfg.FFmpegBin, ffmpegArgs(input, output, s),
-		procOpts{OnStdout: onLine})
+	return runProc(ctx, r.log, r.cfg.FFmpegBin, args, procOpts{OnStdout: onLine})
 }
+
+// runEdit trims and optionally crops. The cut has to land where the user put
+// the handles, and a stream copy can only start on a keyframe - seconds out on
+// a long GOP - so video is re-encoded at visually lossless quality. Audio is
+// copied either way, and a file with no video track is copied whole.
+func (r *FFmpeg) runEdit(ctx context.Context, j *jobs.Job, input string, emit jobs.Emit) (jobs.Result, error) {
+	var res jobs.Result
+
+	p, err := presets.ParseEdit(j.Params, defaultRetentionDays)
+	if err != nil {
+		return res, err
+	}
+
+	emitStage(emit, "probing")
+	span := p.Span()
+	if span <= 0 {
+		// Only the progress bar needs the length; a failed probe just leaves it blank.
+		if total, err := r.probeDuration(ctx, input); err == nil {
+			span = total - p.Start
+		}
+	}
+
+	if err := os.MkdirAll(r.cfg.TmpDir, 0o750); err != nil {
+		return res, fmt.Errorf("create tmp dir: %w", err)
+	}
+	container, copyOnly := editPlan(input)
+	tmpOut := filepath.Join(r.cfg.TmpDir, "edit-"+sanitizeName(shortID(j.ID))+"."+container)
+	defer os.Remove(tmpOut)
+
+	stage := "trimming"
+	if p.HasCrop() {
+		stage = "cropping"
+	}
+	emitStage(emit, stage)
+	prog := &ffProgress{duration: span, stage: stage}
+	if err := r.encode(ctx, editArgs(input, tmpOut, p, copyOnly), prog, emit); err != nil {
+		return res, err
+	}
+	if st, err := os.Stat(tmpOut); err != nil || st.Size() == 0 {
+		return res, errors.New("ffmpeg produced no output file")
+	}
+
+	slug := firstNonEmpty(baseWithoutExt(j.Title), baseWithoutExt(j.Source), baseWithoutExt(input), "media")
+	dst := uniqueOutputPath(r.cfg.DownloadDir, slug, container, j.ID)
+	if err := moveFile(tmpOut, dst); err != nil {
+		return res, fmt.Errorf("move result: %w", err)
+	}
+
+	emitPercent(emit, "done", 100)
+	return jobs.Result{OutputPath: dst}, nil
+}
+
+// Extensions with no video track to re-encode, so an edit on one stays a
+// lossless copy in its own container.
+var audioOnlyExt = map[string]bool{
+	"mp3": true, "m4a": true, "aac": true, "flac": true, "wav": true,
+	"ogg": true, "oga": true, "opus": true, "wma": true,
+}
+
+// editPlan picks the output container and whether the streams can be copied.
+// H.264 only belongs in MP4 and MOV among the containers we see, so anything
+// else re-encoding lands in MKV rather than failing at the muxer.
+func editPlan(input string) (container string, copyOnly bool) {
+	ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(input), "."))
+	if ext == "" || len(ext) > 5 {
+		return "mp4", false
+	}
+	ext = sanitizeName(ext)
+	if audioOnlyExt[ext] {
+		return ext, true
+	}
+	if ext == "mp4" || ext == "mov" || ext == "m4v" {
+		return "mp4", false
+	}
+	return "mkv", false
+}
+
+func editArgs(input, output string, p *presets.EditParams, copyOnly bool) []string {
+	args := []string{"-hide_banner", "-nostdin", "-y"}
+	if p.Start > 0 {
+		// Before -i, so ffmpeg seeks to the cut instead of decoding its way there.
+		args = append(args, "-ss", seconds(p.Start))
+	}
+	args = append(args, "-i", input, "-progress", "pipe:1", "-nostats")
+	if span := p.Span(); span > 0 {
+		args = append(args, "-t", seconds(span))
+	}
+
+	if copyOnly {
+		args = append(args, "-c", "copy", "-avoid_negative_ts", "make_zero")
+	} else {
+		if p.HasCrop() {
+			args = append(args, "-vf",
+				fmt.Sprintf("crop=%d:%d:%d:%d", p.CropW, p.CropH, p.CropX, p.CropY))
+		}
+		// CRF 18 is visually lossless; the audio is passed through untouched.
+		args = append(args, "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+			"-pix_fmt", "yuv420p", "-c:a", "copy")
+	}
+
+	if strings.HasSuffix(output, ".mp4") || strings.HasSuffix(output, ".mov") {
+		args = append(args, "-movflags", "+faststart")
+	}
+	return append(args, output)
+}
+
+func seconds(v float64) string { return strconv.FormatFloat(v, 'f', 3, 64) }
 
 // Matching by prefix rather than glob keeps a metacharacter in the tmp path from
 // turning into a pattern.

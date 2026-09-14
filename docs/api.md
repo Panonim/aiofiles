@@ -239,8 +239,8 @@ or a file that is no longer on disk, 500 `upload_failed` for a write error.
 }
 ```
 
-`type` is `download`, `convert`, `compress` or `image`. A `download` job needs
-`url`; the other three need `upload_id` instead. `params` is validated against
+`type` is `download`, `convert`, `compress`, `image` or `edit`. A `download` job
+needs `url`; the others need `upload_id` instead. `params` is validated against
 the type-specific struct with unknown fields rejected - a typo'd key is a 400,
 not a silently ignored option.
 
@@ -275,6 +275,16 @@ black and white only; both ignore `quality` and take their size from
 which side of the threshold becomes paths), `quality`
 (1–100, default 82), `width`, `height` (0 keeps that dimension, max 20000),
 `strip_metadata` (default true), `retention_days`.
+
+`edit`: `start` and `end` in seconds (`end: 0` runs to the end of the file, and
+the cut must keep at least a tenth of a second), `crop_x`, `crop_y`, `crop_w`,
+`crop_h` in source pixels (`crop_w: 0` keeps the whole frame; width and height
+are set together, rounded down to an even number and at least 16),
+`retention_days`. The cut lands exactly where it was asked for, which a stream
+copy cannot do - it can only start on a keyframe - so video is re-encoded to
+H.264 at CRF 18 while the audio is copied, landing in MP4 or, where H.264 does
+not belong, MKV. A file with no video track (mp3, m4a, flac, ...) is copied
+whole and keeps its own container.
 
 Validation is not only per field. Container/codec combinations ffmpeg would
 refuse to mux are rejected up front - WebM only takes VP9 or AV1 with Opus, MP4

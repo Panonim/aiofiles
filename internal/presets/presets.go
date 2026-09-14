@@ -236,6 +236,16 @@ type ImageParams struct {
 	RetentionDays int    `json:"retention_days"`
 }
 
+type EditParams struct {
+	Start         float64 `json:"start"`  // seconds into the source
+	End           float64 `json:"end"`    // seconds, 0 keeps everything after Start
+	CropX         int     `json:"crop_x"` // pixels, source coordinates
+	CropY         int     `json:"crop_y"`
+	CropW         int     `json:"crop_w"` // 0 = keep the whole frame
+	CropH         int     `json:"crop_h"`
+	RetentionDays int     `json:"retention_days"`
+}
+
 // ValidationError names the offending field so the UI can highlight it.
 type ValidationError struct {
 	Field  string `json:"field"`
@@ -432,6 +442,69 @@ func ParseImage(raw json.RawMessage, defaultRetention int) (*ImageParams, error)
 		return nil, err
 	}
 	return p, nil
+}
+
+// Bounds for a trim: a cut shorter than this is a mis-tap, and no source this
+// tool handles runs for a day.
+const (
+	editMaxSeconds = 24 * 3600
+	editMinSpan    = 0.1
+	cropMinPixels  = 16
+	cropMaxPixels  = 20000
+)
+
+func ParseEdit(raw json.RawMessage, defaultRetention int) (*EditParams, error) {
+	p := &EditParams{RetentionDays: defaultRetention}
+	if err := decode(raw, p); err != nil {
+		return nil, err
+	}
+	if p.Start < 0 || p.Start > editMaxSeconds {
+		return nil, invalid("start", "is outside the file")
+	}
+	if p.End < 0 || p.End > editMaxSeconds {
+		return nil, invalid("end", "is outside the file")
+	}
+	if p.End > 0 && p.End-p.Start < editMinSpan {
+		return nil, invalid("end", "must be at least a tenth of a second after the start")
+	}
+	if err := p.checkCrop(); err != nil {
+		return nil, err
+	}
+	if err := checkRetention(p.RetentionDays); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+func (p *EditParams) checkCrop() error {
+	if p.CropW == 0 && p.CropH == 0 {
+		if p.CropX != 0 || p.CropY != 0 {
+			return invalid("crop_w", "an offset needs a crop size as well")
+		}
+		return nil
+	}
+	// H.264 cannot encode an odd width or height, so a stray pixel is dropped.
+	p.CropW &^= 1
+	p.CropH &^= 1
+	for field, v := range map[string]int{"crop_w": p.CropW, "crop_h": p.CropH} {
+		if v < cropMinPixels || v > cropMaxPixels {
+			return invalid(field, fmt.Sprintf("must be between %d and %d pixels", cropMinPixels, cropMaxPixels))
+		}
+	}
+	if p.CropX < 0 || p.CropY < 0 || p.CropX > cropMaxPixels || p.CropY > cropMaxPixels {
+		return invalid("crop_x", "is outside the frame")
+	}
+	return nil
+}
+
+func (p *EditParams) HasCrop() bool { return p.CropW > 0 && p.CropH > 0 }
+
+// Span is the output length in seconds, 0 when the cut runs to the end.
+func (p *EditParams) Span() float64 {
+	if p.End <= p.Start {
+		return 0
+	}
+	return p.End - p.Start
 }
 
 // ResolveFormat needs the input path because "source" is only decided once
