@@ -657,6 +657,7 @@ function mediaApp() {
       window.addEventListener("hashchange", function () {
         self.applyHash();
       });
+      if (window.Audio) finishAudio = new Audio(FINISH_SOUND_URL);
 
       /* The whole batch landing, not each file: the last active job in the
          queue settling is the only moment worth a sound. */
