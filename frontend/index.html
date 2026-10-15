@@ -538,6 +538,8 @@
                 <input
                   type="file"
                   multiple
+                  accept="image/*,video/*,audio/*"
+                  x-on:click="$el.value = ''"
                   x-on:change="onPick($event, 'convert')"
                   aria-label="Choose a video or image to convert"
                 />
@@ -582,7 +584,13 @@
                     <i data-lucide="plus"></i>
                     <span x-text="uploadKind('convert') === 'image' ? 'Add more images' : 'Add more videos'"
                       >Add more</span>
-                    <input type="file" multiple x-on:change="onPick($event, 'convert')" />
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*,video/*,audio/*"
+                      x-on:click="$el.value = ''"
+                      x-on:change="onPick($event, 'convert')"
+                    />
                   </label>
                   <span class="hint" x-text="uploads.convert.length + ' file' + (uploads.convert.length === 1 ? '' : 's')"></span>
                   <button type="button" class="btn btn-sm btn-quiet" x-on:click="clearUploads('convert')">
@@ -1018,6 +1026,8 @@
                 <input
                   type="file"
                   multiple
+                  accept="image/*,video/*,audio/*"
+                  x-on:click="$el.value = ''"
                   x-on:change="onPick($event, 'compress')"
                   aria-label="Choose a video or image to compress"
                 />
@@ -1062,7 +1072,13 @@
                     <i data-lucide="plus"></i>
                     <span x-text="uploadKind('compress') === 'image' ? 'Add more images' : 'Add more videos'"
                       >Add more</span>
-                    <input type="file" multiple x-on:change="onPick($event, 'compress')" />
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*,video/*,audio/*"
+                      x-on:click="$el.value = ''"
+                      x-on:change="onPick($event, 'compress')"
+                    />
                   </label>
                   <span class="hint" x-text="uploads.compress.length + ' file' + (uploads.compress.length === 1 ? '' : 's')"></span>
                   <button type="button" class="btn btn-sm btn-quiet" x-on:click="clearUploads('compress')">
@@ -1353,7 +1369,7 @@
           </div>
           <div class="btn-row">
             <label class="sr-only" for="job-filter">Filter by status</label>
-            <select id="job-filter" x-model="jobFilter" x-on:change="jobPage = 1" style="width: auto">
+            <select id="job-filter" x-model="jobFilter" x-on:change="jobPage = 1; refreshIcons()" style="width: auto">
               <template x-for="s in statusFilters" :key="s.value">
                 <option x-bind:value="s.value" x-text="s.label"
                       x-bind:selected="s.value === String(jobFilter)"></option>
