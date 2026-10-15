@@ -1,7 +1,6 @@
 name: CI
 
-# Only Go sources feed the build/vet/test steps, so doc- and asset-only
-# changes skip CI. schema.sql is go:embed'ed, hence included.
+# Only Go sources feed the build/vet/test steps, so doc- and asset-only changes skip CI. schema.sql is go:embed'ed, hence included.
 on:
   push:
     branches: [main]

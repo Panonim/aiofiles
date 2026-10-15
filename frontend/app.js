@@ -240,6 +240,23 @@ function isIOS() {
   return /Macintosh/.test(ua) && (window.navigator.maxTouchPoints || 0) > 1;
 }
 
+var SAVE_TYPES = {
+  mp4: "video/mp4", m4v: "video/mp4", mov: "video/quicktime", webm: "video/webm",
+  mkv: "video/x-matroska", mp3: "audio/mpeg", m4a: "audio/mp4", aac: "audio/aac",
+  ogg: "audio/ogg", opus: "audio/ogg", wav: "audio/wav", flac: "audio/flac",
+  jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif",
+  webp: "image/webp", avif: "image/avif", heic: "image/heic", heif: "image/heif",
+  tif: "image/tiff", tiff: "image/tiff", bmp: "image/bmp",
+};
+
+/* The share sheet only offers Save to Photos for a recognised image or video
+   type, so a generic or missing one is replaced by the extension's. */
+function saveType(blob, name) {
+  var type = String(blob.type || "").toLowerCase();
+  if (/^(image|video|audio)\//.test(type)) return type;
+  return SAVE_TYPES[extOf(name)] || type || "application/octet-stream";
+}
+
 /* Mirrors the .job phone breakpoint in app.css. */
 function isMobileViewport() {
   return !!(window.matchMedia && window.matchMedia("(max-width: 680px)").matches);
@@ -1272,7 +1289,9 @@ function mediaApp() {
     onPick(event, tab) {
       var files = event.target.files;
       if (files && files.length) this.addFiles(files, tab);
-      event.target.value = "";
+      /* Not cleared here: iOS drops the picked files' temp copies when the
+         input is reset, before they have been read. The input resets on its
+         next click instead. */
     },
 
     /* One batch, one kind: the options on screen belong to either a video or
@@ -2382,9 +2401,7 @@ function mediaApp() {
       if (tick !== saveTick) return;
       saveRequest = null;
 
-      savePending = new File([blob], name, {
-        type: blob.type || "application/octet-stream",
-      });
+      savePending = new File([blob], name, { type: saveType(blob, name) });
       this.save.phase = "ready";
       /* The share sheet wants a fresh user gesture and the fetch has probably
          outlived the tap that started it. Try anyway - a short fetch usually
@@ -2398,7 +2415,8 @@ function mediaApp() {
       var file = savePending;
       if (!file) return;
 
-      var payload = { files: [file], title: file.name };
+      /* No title or text: iOS saves those as an extra .txt next to the file. */
+      var payload = { files: [file] };
       var sharable =
         navigator.canShare && navigator.share && navigator.canShare(payload);
       /* No file sharing on old iOS, or on plain HTTP where it is undefined. */

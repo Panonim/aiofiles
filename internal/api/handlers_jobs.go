@@ -241,6 +241,9 @@ func (s *server) handleDownload(w http.ResponseWriter, r *http.Request) {
 		}
 		s.log.Debug("output outside download dir, streaming through Go", "path", job.OutputPath)
 	}
+	if ct := contentTypeFor(name); ct != "application/octet-stream" {
+		w.Header().Set("Content-Type", ct)
+	}
 	http.ServeFile(w, r, job.OutputPath)
 }
 
@@ -267,8 +270,36 @@ func accelPath(prefix, root, outputPath string) (string, bool) {
 	return strings.TrimRight(prefix, "/") + "/" + strings.Join(segments, "/"), true
 }
 
+// mediaTypes covers the outputs the tool writes. The system mime table is
+// often absent in slim images, and an octet-stream download hides the iOS
+// "Save to Photos" action.
+var mediaTypes = map[string]string{
+	".mp4":  "video/mp4",
+	".m4v":  "video/mp4",
+	".mov":  "video/quicktime",
+	".mkv":  "video/x-matroska",
+	".webm": "video/webm",
+	".mp3":  "audio/mpeg",
+	".m4a":  "audio/mp4",
+	".aac":  "audio/aac",
+	".ogg":  "audio/ogg",
+	".opus": "audio/ogg",
+	".wav":  "audio/wav",
+	".flac": "audio/flac",
+	".heic": "image/heic",
+	".heif": "image/heif",
+	".avif": "image/avif",
+	".tif":  "image/tiff",
+	".tiff": "image/tiff",
+	".bmp":  "image/bmp",
+}
+
 func contentTypeFor(name string) string {
-	if ct := mime.TypeByExtension(strings.ToLower(filepath.Ext(name))); ct != "" {
+	ext := strings.ToLower(filepath.Ext(name))
+	if ct, ok := mediaTypes[ext]; ok {
+		return ct
+	}
+	if ct := mime.TypeByExtension(ext); ct != "" {
 		return ct
 	}
 	return "application/octet-stream"
